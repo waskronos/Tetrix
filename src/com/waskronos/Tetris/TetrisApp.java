@@ -10,8 +10,8 @@ public class TetrisApp extends Application {
         this.primaryStage = primayStage;
         primaryStage.setTitle("Tetris");
 
-        primayStage.setWidth(800);
-        primaryStage.setHeight(600);
+        primayStage.setWidth(900);
+        primaryStage.setHeight(900);
         showMainScreen();
         primaryStage.show();
     }
