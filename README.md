@@ -65,10 +65,13 @@ The architecture follows object-oriented design principles with clean separation
 ## Team Members
 
 -Agampreet Singh
+
 -Harry Arnold
+
 -Jason Nathan Corotan
+
 -Razeen Ali
--Yuvrajvir Gill
+
 
 ## License
 
