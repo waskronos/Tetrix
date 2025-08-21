@@ -7,6 +7,7 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -14,72 +15,76 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
+import java.util.Random;
+
 public class GameScreen extends BorderPane {
+
     private TetrisApp app;
     private Canvas gameCanvas;
     private GraphicsContext gc;
     private AnimationTimer loop;
 
     private final int GRID_WIDTH = 10;
-    private final int GRID_HEIGHT = 20; //keeping tetris grid size 10x20 (conventional size)
+    private final int GRID_HEIGHT = 20;
     private final int CELL_SIZE = 30;
 
+    // Grid stores 0 = empty, 1..7 = fixed block with color id
     private int[][] grid = new int[GRID_HEIGHT][GRID_WIDTH];
 
-    private int score = 0;
-    private int level = 0;
-    private int lines_clear = 0;
+    private Tetramino currentTetramino;
+    private int currentColorIndex; // 1..7 matches getColor
+    private Random random = new Random();
+
+    // Timing (you can later scale by level)
+    private long fallIntervalNs = 500_000_000; // 0.5s per step
 
     public GameScreen(TetrisApp app) {
         this.app = app;
 
-        //initalize an empty grid at start
-        for (int y = 0; y < GRID_HEIGHT; y++){
-            for (int x = 0; x < GRID_WIDTH; x ++){
-                grid[y][x] = 0;
-            }
-        } //takes every grid from 0 to 10 vertically and also horizontally to 20, deems their product to be zero
-        //0 = empty grid, 1+ = filled with smthing
+        initializeGrid();
 
         HBox gameBox = new HBox(20);
         gameBox.setAlignment(Pos.CENTER);
 
-        // Create game canvas for drawing
-        gameCanvas = new Canvas(GRID_HEIGHT*CELL_SIZE, GRID_HEIGHT*CELL_SIZE);
+        gameCanvas = new Canvas(GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
         gc = gameCanvas.getGraphicsContext2D();
 
         VBox statsPanel = createStatsPanel();
-
         gameBox.getChildren().addAll(gameCanvas, statsPanel);
         setCenter(gameBox);
-
         BorderPane.setMargin(gameBox, new Insets(20));
 
-        // Create back button
         Button backButton = new Button("Back to Main Menu");
         backButton.setOnAction(e -> {
-            //will stop again (multiple ways to stop a game)
             stopGame();
             app.showMainScreen();
         });
-
-        // Add back button to bottom
         setBottom(backButton);
         BorderPane.setAlignment(backButton, Pos.CENTER);
         BorderPane.setMargin(backButton, new Insets(20));
 
-        // Start animation
+        setupInputHandlers();
+
+        spawnTetramino();
         startGame();
     }
 
-    private VBox createStatsPanel(){
+    private void initializeGrid() {
+        for (int y = 0; y < GRID_HEIGHT; y++) {
+            for (int x = 0; x < GRID_WIDTH; x++) {
+                grid[y][x] = 0;
+            }
+        }
+    }
+
+    private VBox createStatsPanel() {
         VBox statsPanel = new VBox(20);
         statsPanel.setAlignment(Pos.CENTER);
-        statsPanel.setPrefWidth(20);
+        statsPanel.setPrefWidth(120);
 
         Label nextLabel = new Label("NEXT");
         nextLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
-        Canvas nextpieceCanvas = new Canvas(120,120);
+        Canvas nextpieceCanvas = new Canvas(80, 80); // placeholder
 
         Label scoreLabel = new Label("SCORE");
         scoreLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
@@ -105,96 +110,259 @@ public class GameScreen extends BorderPane {
         return statsPanel;
     }
 
-    private void startGame(){
-        testPattern();
+    private void setupInputHandlers() {
+        // Allow canvas to receive key events
+        gameCanvas.setFocusTraversable(true);
+        gameCanvas.setOnKeyPressed(e -> {
+            if (currentTetramino == null) return;
+            KeyCode code = e.getCode();
+            switch (code) {
+                case A -> {
+                    if (!willCollide(-1, 0)) currentTetramino.move(-1, 0);
+                }
+                case D -> {
+                    if (!willCollide(1, 0)) currentTetramino.move(1, 0);
+                }
+                case S -> {
+                    // Soft drop
+                    if (!willCollide(0, 1)) {
+                        currentTetramino.move(0, 1);
+                    } else {
+                        lockAndSpawn();
+                    }
+                }
+                case W -> {
+                    // (Optional) rotate; only if implemented in Tetramino
+                    // rotateTetramino();
+                }
+                case SPACE -> {
+                    // Hard drop (optional)
+                    while (!willCollide(0, 1)) {
+                        currentTetramino.move(0, 1);
+                    }
+                    lockAndSpawn();
+                }
+                case LEFT -> {
+                    currentTetramino.rotateCCW();
+                    if (willCollide(0, 0)) {
+                        // Undo rotation if collides
+                        currentTetramino.rotateCW();
+                    }
+                }
+                case RIGHT -> {
+                    currentTetramino.rotateCW();
+                    if (willCollide(0, 0)) {
+                        // Undo rotation if collides
+                        currentTetramino.rotateCCW();
+                    }
+                }
+            }
+        });
+    }
+
+    private void startGame() {
         loop = new AnimationTimer() {
+            private long lastFall = 0;
+
             @Override
-            public void handle(long l) {
+            public void handle(long now) {
+                if (lastFall == 0) lastFall = now;
+
+                if (now - lastFall >= fallIntervalNs) {
+                    updateGame();
+                    lastFall = now;
+                }
                 drawGame();
             }
         };
-
         loop.start();
     }
 
-    private void stopGame(){
-        if (loop != null){
-            loop.stop();
+    private void stopGame() {
+        if (loop != null) loop.stop();
+    }
+
+    private void spawnTetramino() {
+        int[][][] shapes = {
+                {{1,1,1,1}},          // I
+                {{1,1},{1,1}},        // O
+                {{0,1,0},{1,1,1}},    // T
+                {{0,1,1},{1,1,0}},    // S
+                {{1,1,0},{0,1,1}},    // Z
+                {{1,0,0},{1,1,1}},    // J
+                {{0,0,1},{1,1,1}}     // L
+        };
+        currentColorIndex = random.nextInt(shapes.length) + 1; // 1..7
+        int[][] shape = shapes[currentColorIndex - 1];
+
+        int startX = (GRID_WIDTH - shape[0].length) / 2;
+        int startY = 0;
+
+        currentTetramino = new Tetramino(shape, startX, startY);
+        // Immediate game over detection if spawn position collides
+        if (willCollide(0, 0)) {
+            stopGame();
+            System.out.println("GAME OVER");
+            currentTetramino = null;
         }
     }
 
-    private void testPattern(){
-        for (int x = 0; x < GRID_WIDTH; x++){
-            grid[GRID_HEIGHT-1][x] = 1;
+    private void updateGame() {
+        if (currentTetramino == null) return;
+
+        // If moving down would collide -> lock & spawn new
+        if (willCollide(0, 1)) {
+            lockAndSpawn();
+        } else {
+            currentTetramino.move(0, 1);
         }
-
-        grid[GRID_HEIGHT - 2][7] = 2; //creates a random stack
-        grid[GRID_HEIGHT - 3][7] = 2;
-        grid[GRID_HEIGHT - 2][8] = 2;
-        grid[GRID_HEIGHT - 3][8] = 2;
-
-        grid[GRID_HEIGHT-2][2] = 3; //creates L shape
-        grid[GRID_HEIGHT-3][2] = 3;
-        grid[GRID_HEIGHT-4][2] = 3;
-        grid[GRID_HEIGHT-2][3] = 3;
     }
 
-    private void drawGame(){
+    private void lockAndSpawn() {
+        placeTetramino();
+        clearCompletedLines();
+        spawnTetramino();
+    }
+
+    private boolean willCollide(int dx, int dy) {
+        if (currentTetramino == null) return false;
+        int[][] shape = currentTetramino.getShape();
+        int baseX = currentTetramino.getX() + dx;
+        int baseY = currentTetramino.getY() + dy;
+
+        for (int r = 0; r < shape.length; r++) {
+            for (int c = 0; c < shape[r].length; c++) {
+                if (shape[r][c] == 0) continue;
+
+                int gridX = baseX + c;
+                int gridY = baseY + r;
+
+                // Outside bottom
+                if (gridY >= GRID_HEIGHT) return true;
+                // Outside sides
+                if (gridX < 0 || gridX >= GRID_WIDTH) return true;
+                // Collides with fixed block
+                if (gridY >= 0 && grid[gridY][gridX] != 0) return true;
+            }
+        }
+        return false;
+    }
+
+    private void placeTetramino() {
+        int[][] shape = currentTetramino.getShape();
+        int baseX = currentTetramino.getX();
+        int baseY = currentTetramino.getY();
+
+        for (int r = 0; r < shape.length; r++) {
+            for (int c = 0; c < shape[r].length; c++) {
+                if (shape[r][c] == 0) continue;
+                int gx = baseX + c;
+                int gy = baseY + r;
+                if (gy >= 0 && gy < GRID_HEIGHT && gx >= 0 && gx < GRID_WIDTH) {
+                    grid[gy][gx] = currentColorIndex;
+                }
+            }
+        }
+    }
+
+    private void clearCompletedLines() {
+        int linesClearedThisDrop = 0;
+        for (int y = GRID_HEIGHT - 1; y >= 0; y--) {
+            boolean full = true;
+            for (int x = 0; x < GRID_WIDTH; x++) {
+                if (grid[y][x] == 0) { full = false; break; }
+            }
+            if (full) {
+                linesClearedThisDrop++;
+                // Shift everything down
+                for (int row = y; row > 0; row--) {
+                    System.arraycopy(grid[row - 1], 0, grid[row], 0, GRID_WIDTH);
+                }
+                // Clear top row
+                for (int x = 0; x < GRID_WIDTH; x++) grid[0][x] = 0;
+                y++; // re-check same y after shifting
+            }
+        }
+//        if (linesClearedThisDrop > 0) {
+//            // Basic scoring (placeholder): 100 per line
+//            score += 100 * linesClearedThisDrop;
+//            lines_clear += linesClearedThisDrop;
+//            // Leveling logic can go here
+//        }
+    }
+
+    public void drawGame() {
         gc.clearRect(0, 0, gameCanvas.getWidth(), gameCanvas.getHeight());
-        gc.setFill(Color.rgb(240,240,240));
+
+        gc.setFill(Color.LIGHTGRAY);
         gc.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
-        gc.setStroke(Color.LIGHTGRAY);
-        gc.setLineWidth(0.6);
 
-        for(int x = 0; x <= GRID_WIDTH; x++){
-            gc.strokeLine( x * CELL_SIZE, 0, x * CELL_SIZE, GRID_HEIGHT*CELL_SIZE);
+        gc.setStroke(Color.DARKGRAY);
+        gc.setLineWidth(0.5);
+        for (int x = 0; x <= GRID_WIDTH; x++) {
+            gc.strokeLine(x * CELL_SIZE, 0, x * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
+        }
+        for (int y = 0; y <= GRID_HEIGHT; y++) {
+            gc.strokeLine(0, y * CELL_SIZE, GRID_WIDTH * CELL_SIZE, y * CELL_SIZE);
         }
 
-        for (int y = 0; y <= GRID_HEIGHT; y++){
-            gc.strokeLine(0, y*CELL_SIZE, GRID_WIDTH*CELL_SIZE, y *CELL_SIZE);
-        }
-
-        for (int y = 0; y < GRID_HEIGHT; y++){
-            for (int x = 0; x < GRID_WIDTH; x++){
-                if (grid[y][x] > 0){
-                    drawBlock(x,y, getColor(grid[y][x]));
+        // Fixed blocks
+        for (int y = 0; y < GRID_HEIGHT; y++) {
+            for (int x = 0; x < GRID_WIDTH; x++) {
+                if (grid[y][x] > 0) {
+                    drawBlock(x, y, getColor(grid[y][x]));
                 }
             }
         }
 
-        gc.setStroke(Color.BLACK);
-        gc.setLineWidth(2);
-        gc.strokeRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
+        // Falling piece
+        if (currentTetramino != null) {
+            int[][] shape = currentTetramino.getShape();
+            int baseX = currentTetramino.getX();
+            int baseY = currentTetramino.getY();
+            Color color = getColor(currentColorIndex);
+
+            for (int r = 0; r < shape.length; r++) {
+                for (int c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c] != 0) {
+                        int gx = baseX + c;
+                        int gy = baseY + r;
+                        if (gy >= 0 && gy < GRID_HEIGHT && gx >= 0 && gx < GRID_WIDTH) {
+                            drawBlock(gx, gy, color);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    private void drawBlock(int x, int y, Color color){
-        int pixelX = x * CELL_SIZE;
-        int pixelY = y * CELL_SIZE;
+    private void drawBlock(int x, int y, Color color) {
+        int px = x * CELL_SIZE;
+        int py = y * CELL_SIZE;
 
-        gc.setFill(color); //filling block with 2d color
-        gc.fillRect(pixelX + 1, pixelY + 1, CELL_SIZE -2, CELL_SIZE - 2);
+        gc.setFill(color);
+        gc.fillRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
 
-        //to give 3d effects we give a highlight shade and a shadow
         gc.setStroke(color.brighter());
         gc.setLineWidth(2);
-        gc.strokeLine(pixelX + 1, pixelY + 1, pixelX + CELL_SIZE - 1, pixelY + 1); //top side
-        gc.strokeLine(pixelX + 1, pixelY + 1, pixelX + 1, pixelY + CELL_SIZE - 1); //left side to highlight
+        gc.strokeLine(px + 1, py + 1, px + CELL_SIZE - 1, py + 1);
+        gc.strokeLine(px + 1, py + 1, px + 1, py + CELL_SIZE - 1);
 
         gc.setStroke(color.darker());
-        gc.strokeLine(pixelX + CELL_SIZE - 1, pixelY + 1, pixelX + CELL_SIZE - 1, pixelY + CELL_SIZE - 1);
-        gc.strokeLine(pixelX + 1, pixelY + CELL_SIZE - 1, pixelX + CELL_SIZE - 1, pixelY + CELL_SIZE - 1);
+        gc.strokeLine(px + CELL_SIZE - 1, py + 1, px + CELL_SIZE - 1, py + CELL_SIZE - 1);
+        gc.strokeLine(px + 1, py + CELL_SIZE - 1, px + CELL_SIZE - 1, py + CELL_SIZE - 1);
     }
 
-    private Color getColor(int value){
-        switch(value){
-            case 1: return Color.CYAN;
-            case 2: return Color.BLUE;
-            case 3: return Color.ORANGE;
-            case 4: return Color.YELLOW;
-            case 5: return Color.GREEN;
-            case 6: return Color.PURPLE;
-            case 7: return Color.RED;
-            default: return Color.GRAY;
-        }
+    private Color getColor(int value) {
+        return switch (value) {
+            case 1 -> Color.CYAN;
+            case 2 -> Color.YELLOW;
+            case 3 -> Color.PURPLE;
+            case 4 -> Color.GREEN;
+            case 5 -> Color.RED;
+            case 6 -> Color.BLUE;
+            case 7 -> Color.ORANGE;
+            default -> Color.GRAY;
+        };
     }
 }
