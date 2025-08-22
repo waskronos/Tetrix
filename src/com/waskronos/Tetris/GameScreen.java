@@ -32,11 +32,22 @@ public class GameScreen extends BorderPane {
     private int[][] grid = new int[GRID_HEIGHT][GRID_WIDTH];
 
     private Tetramino currentTetramino;
-    private int currentColorIndex; // 1..7 matches getColor
+    private int currentColorIndex;
+
+    private Tetramino nextTetramino;
+    private int nextColorIndex;  // 1..7 matches getColor
     private Random random = new Random();
 
     // Timing (you can later scale by level)
     private long fallIntervalNs = 500_000_000; // 0.5s per step
+
+    private int score = 0;
+    private int level = 1;
+    private Label scoreValue;
+    private Label levelValue;
+
+    private String difficulty = "MEDIUM";
+    private Canvas nextPieceCanvas;
 
     public GameScreen(TetrisApp app) {
         this.app = app;
@@ -64,7 +75,7 @@ public class GameScreen extends BorderPane {
         BorderPane.setMargin(backButton, new Insets(20));
 
         setupInputHandlers();
-
+        generateNextTetramino();
         spawnTetramino();
         startGame();
     }
@@ -84,25 +95,25 @@ public class GameScreen extends BorderPane {
 
         Label nextLabel = new Label("NEXT");
         nextLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
-        Canvas nextpieceCanvas = new Canvas(80, 80); // placeholder
+        nextPieceCanvas = new Canvas(80, 80);
 
         Label scoreLabel = new Label("SCORE");
         scoreLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
-        Label scoreValue = new Label("0");
+        scoreValue = new Label("0");
         scoreValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
 
         Label levelLabel = new Label("LEVEL");
         levelLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
-        Label levelValue = new Label("1");
+        levelValue = new Label("1");
         levelValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
 
         Label diffiLabel = new Label("DIFFICULTY");
         diffiLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
-        Label diffiValue = new Label("MEDIUM");
+        Label diffiValue = new Label(difficulty);
         diffiValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
 
         statsPanel.getChildren().addAll(
-                nextLabel, nextpieceCanvas,
+                nextLabel, nextPieceCanvas,
                 scoreLabel, scoreValue,
                 levelLabel, levelValue,
                 diffiLabel, diffiValue
@@ -173,6 +184,7 @@ public class GameScreen extends BorderPane {
                     lastFall = now;
                 }
                 drawGame();
+                drawNextPiecePreview();
             }
         };
         loop.start();
@@ -182,24 +194,32 @@ public class GameScreen extends BorderPane {
         if (loop != null) loop.stop();
     }
 
-    private void spawnTetramino() {
+    private void generateNextTetramino(){
         int[][][] shapes = {
-                {{1,1,1,1}},          // I
-                {{1,1},{1,1}},        // O
-                {{0,1,0},{1,1,1}},    // T
-                {{0,1,1},{1,1,0}},    // S
-                {{1,1,0},{0,1,1}},    // Z
-                {{1,0,0},{1,1,1}},    // J
-                {{0,0,1},{1,1,1}}     // L
+                {{1, 1, 1, 1}},          // I
+                {{1, 1}, {1, 1}},        // O
+                {{0, 1, 0}, {1, 1, 1}},    // T
+                {{0, 1, 1}, {1, 1, 0}},    // S
+                {{1, 1, 0}, {0, 1, 1}},    // Z
+                {{1, 0, 0}, {1, 1, 1}},    // J
+                {{0, 0, 1}, {1, 1, 1}}     // L
         };
-        currentColorIndex = random.nextInt(shapes.length) + 1; // 1..7
-        int[][] shape = shapes[currentColorIndex - 1];
+        nextColorIndex = random.nextInt(shapes.length) + 1;
+        int[][] shape = shapes[nextColorIndex - 1];
+        // Centered at (0,0) for preview
+        nextTetramino = new Tetramino(shape, 0, 0);
+    }
 
-        int startX = (GRID_WIDTH - shape[0].length) / 2;
+    private void spawnTetramino() { //now we use the next tetramino as the current tetramino to spawn
+        currentTetramino = nextTetramino;
+        currentColorIndex = nextColorIndex;
+        generateNextTetramino();
+
+        int startX = (GRID_WIDTH - currentTetramino.getShape()[0].length) / 2;
         int startY = 0;
+        currentTetramino.setPosition(startX, startY);
 
-        currentTetramino = new Tetramino(shape, startX, startY);
-        // Immediate game over detection if spawn position collides
+        // Immediate game over detection if spawn position collides = no more space
         if (willCollide(0, 0)) {
             stopGame();
             System.out.println("GAME OVER");
@@ -220,6 +240,7 @@ public class GameScreen extends BorderPane {
 
     private void lockAndSpawn() {
         placeTetramino();
+        addScoreForLand();
         clearCompletedLines();
         spawnTetramino();
     }
@@ -283,12 +304,40 @@ public class GameScreen extends BorderPane {
                 y++; // re-check same y after shifting
             }
         }
-//        if (linesClearedThisDrop > 0) {
-//            // Basic scoring (placeholder): 100 per line
-//            score += 100 * linesClearedThisDrop;
-//            lines_clear += linesClearedThisDrop;
-//            // Leveling logic can go here
-//        }
+        if (linesClearedThisDrop > 0) {
+            addScoreForLines(linesClearedThisDrop);
+        }
+    }
+
+    private void addScoreForLines(int lines){
+        score += 10*lines;
+        updateLevel();
+        updateStatsLabels();
+    }
+    private void addScoreForLand(){
+        score += 1;
+        updateLevel();
+        updateStatsLabels();
+    }
+
+    private void updateLevel(){
+        int newLevel = score/50+1;
+        if (newLevel != level){
+            level = newLevel;
+            updateFallingSpeed();
+        }
+    }
+
+    private void updateStatsLabels(){
+        scoreValue.setText(String.valueOf(score));
+        levelValue.setText(String.valueOf(level));
+    }
+
+    private void updateFallingSpeed(){
+        long baseInterval = 500_000_000L; // 0.5s
+        long speedupPer2Levels = 50_000_000L; // 0.05s per 2 levels (gentle)
+        int speedups = (level - 1) / 2;
+        fallIntervalNs = Math.max(100_000_000L, baseInterval - speedupPer2Levels * speedups);
     }
 
     public void drawGame() {
@@ -330,6 +379,44 @@ public class GameScreen extends BorderPane {
                         if (gy >= 0 && gy < GRID_HEIGHT && gx >= 0 && gx < GRID_WIDTH) {
                             drawBlock(gx, gy, color);
                         }
+                    }
+                }
+            }
+        }
+    }
+    private void drawNextPiecePreview(){
+        GraphicsContext ngc = nextPieceCanvas.getGraphicsContext2D();
+        ngc.clearRect(0, 0, nextPieceCanvas.getWidth(), nextPieceCanvas.getHeight());
+
+        if (difficulty.equalsIgnoreCase("HARD")){
+            ngc.setFont(Font.font("ARIAL", FontWeight.BOLD, 48));
+            ngc.setFill(Color.DARKRED);
+            ngc.fillText("\uD83D\uDC80", 20, 56); // Skull emoji
+            return;
+        }
+
+        if (nextTetramino != null) {
+            int[][] shape = nextTetramino.getShape();
+            Color color = getColor(nextColorIndex);
+
+            int boxSize = 18;
+            int shapeWidth = shape[0].length;
+            int shapeHeight = shape.length;
+
+            int offsetX = (int)(nextPieceCanvas.getWidth() - shapeWidth * boxSize) / 2;
+            int offsetY = (int)(nextPieceCanvas.getHeight() - shapeHeight * boxSize) / 2;
+
+            for (int r = 0; r < shapeHeight; r++) {
+                for (int c = 0; c < shapeWidth; c++) {
+                    if (shape[r][c] != 0) {
+                        int px = offsetX + c * boxSize;
+                        int py = offsetY + r * boxSize;
+                        ngc.setFill(color);
+                        ngc.fillRect(px, py, boxSize - 2, boxSize - 2);
+
+                        ngc.setStroke(color.brighter());
+                        ngc.setLineWidth(2);
+                        ngc.strokeRect(px, py, boxSize - 2, boxSize - 2);
                     }
                 }
             }
