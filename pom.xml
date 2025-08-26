@@ -10,8 +10,8 @@
         <name>Tetrix</name>
 
         <properties>
-            <maven.compiler.release>24</maven.compiler.release>
-            <javafx.version>24.0.2</javafx.version>
+            <maven.compiler.release>17</maven.compiler.release>
+            <javafx.version>17.0.2</javafx.version>
         </properties>
 
         <dependencies>
