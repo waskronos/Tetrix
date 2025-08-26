@@ -1,6 +1,7 @@
 package com.waskronos.Tetris;
 
 import javafx.animation.AnimationTimer;
+import javafx.animation.FadeTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.canvas.Canvas;
@@ -14,6 +15,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.util.Duration;
 
 import java.util.Random;
 
@@ -46,11 +48,17 @@ public class GameScreen extends BorderPane {
     private Label scoreValue;
     private Label levelValue;
 
-    private String difficulty = "MEDIUM";
+    private String difficulty;
     private Canvas nextPieceCanvas;
+    private boolean isPaused = false;
+    private BorderPane pauseOverlay;
 
     public GameScreen(TetrisApp app) {
         this.app = app;
+        
+        // Initialize settings from app
+        this.difficulty = app.getDifficulty().toUpperCase();
+        adjustSpeedFromSettings();
 
         initializeGrid();
 
@@ -125,8 +133,17 @@ public class GameScreen extends BorderPane {
         // Allow canvas to receive key events
         gameCanvas.setFocusTraversable(true);
         gameCanvas.setOnKeyPressed(e -> {
-            if (currentTetramino == null) return;
             KeyCode code = e.getCode();
+            
+            // Handle pause/unpause
+            if (code == KeyCode.ESCAPE) {
+                togglePause();
+                return;
+            }
+            
+            // Skip game controls if paused
+            if (isPaused || currentTetramino == null) return;
+            
             switch (code) {
                 case A -> {
                     if (!willCollide(-1, 0)) currentTetramino.move(-1, 0);
@@ -170,6 +187,60 @@ public class GameScreen extends BorderPane {
             }
         });
     }
+    
+    private void togglePause() {
+        if (isPaused) {
+            resumeGame();
+        } else {
+            pauseGame();
+        }
+    }
+    
+    private void pauseGame() {
+        isPaused = true;
+        if (loop != null) {
+            loop.stop();
+        }
+        showPauseOverlay();
+    }
+    
+    private void resumeGame() {
+        isPaused = false;
+        hidePauseOverlay();
+        startGame();
+    }
+    
+    private void showPauseOverlay() {
+        if (pauseOverlay == null) {
+            createPauseOverlay();
+        }
+        getChildren().add(pauseOverlay);
+    }
+    
+    private void hidePauseOverlay() {
+        if (pauseOverlay != null) {
+            getChildren().remove(pauseOverlay);
+        }
+    }
+    
+    private void createPauseOverlay() {
+        pauseOverlay = new BorderPane();
+        pauseOverlay.setStyle("-fx-background-color: rgba(0, 0, 0, 0.7);");
+        
+        Label pauseLabel = new Label("PAUSED");
+        pauseLabel.setFont(Font.font("Arial", FontWeight.BOLD, 48));
+        pauseLabel.setTextFill(Color.WHITE);
+        
+        Label instructionLabel = new Label("Press ESC to resume");
+        instructionLabel.setFont(Font.font("Arial", FontWeight.NORMAL, 20));
+        instructionLabel.setTextFill(Color.WHITE);
+        
+        VBox pauseContent = new VBox(20);
+        pauseContent.setAlignment(Pos.CENTER);
+        pauseContent.getChildren().addAll(pauseLabel, instructionLabel);
+        
+        pauseOverlay.setCenter(pauseContent);
+    }
 
     private void startGame() {
         loop = new AnimationTimer() {
@@ -177,6 +248,8 @@ public class GameScreen extends BorderPane {
 
             @Override
             public void handle(long now) {
+                if (isPaused) return; // Skip game logic when paused
+                
                 if (lastFall == 0) lastFall = now;
 
                 if (now - lastFall >= fallIntervalNs) {
@@ -338,6 +411,13 @@ public class GameScreen extends BorderPane {
         long speedupPer2Levels = 50_000_000L; // 0.05s per 2 levels (gentle)
         int speedups = (level - 1) / 2;
         fallIntervalNs = Math.max(100_000_000L, baseInterval - speedupPer2Levels * speedups);
+    }
+    
+    private void adjustSpeedFromSettings() {
+        // Adjust base speed based on user setting (1-10 scale)
+        double speedMultiplier = app.getSpeed() / 5.0; // 5 is the default/medium speed
+        long baseInterval = (long)(500_000_000L / speedMultiplier);
+        fallIntervalNs = Math.max(50_000_000L, baseInterval); // Minimum 0.05s
     }
 
     public void drawGame() {
