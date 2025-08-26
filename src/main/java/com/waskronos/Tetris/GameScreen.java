@@ -28,6 +28,12 @@ public class GameScreen extends BorderPane {
     private final int GRID_HEIGHT = 20;
     private final int CELL_SIZE = 30;
 
+    private boolean isPaused = false;
+    private BorderPane pauseOverlay;
+
+    // Use the class field for timing so we can reset it on resume
+    private long lastFall = 0;
+
     // Grid stores 0 = empty, 1..7 = fixed block with color id
     private int[][] grid = new int[GRID_HEIGHT][GRID_WIDTH];
 
@@ -38,8 +44,17 @@ public class GameScreen extends BorderPane {
     private int nextColorIndex;  // 1..7 matches getColor
     private Random random = new Random();
 
-    // Timing (you can later scale by level)
-    private long fallIntervalNs = 500_000_000; // 0.5s per step
+    // Timing (controlled by config + level)
+    private long fallIntervalNs = 500_000_000L;    // current interval
+    private long baseFallIntervalNs = 500_000_000L;
+    private static final long BASE_MAX_INTERVAL_NS = 700_000_000L; // ~0.7s at speed=1
+    private static final long BASE_MIN_INTERVAL_NS = 70_000_000L;  // ~0.07s at speed=10
+    private static final long MIN_INTERVAL_NS      = 50_000_000L;  // absolute clamp ~0.05s
+    private static final double LEVEL_ACCEL_FACTOR = 0.85;         // 15% faster each level
+
+    // Leveling by lines (classic)
+    private int totalLinesCleared = 0;
+    private int linesPerLevel = 10; // every 10 lines, next level
 
     private int score = 0;
     private int level = 1;
@@ -52,7 +67,16 @@ public class GameScreen extends BorderPane {
     public GameScreen(TetrisApp app) {
         this.app = app;
 
+        // Pull difficulty from app for UI and preview behavior
+        this.difficulty = (app.getDifficulty() == null) ? "MEDIUM" : app.getDifficulty().trim().toUpperCase();
+        // Compute base fall interval from Config (speed + difficulty), then set current
+        baseFallIntervalNs = computeFallIntervalNs(app.getGameSpeed(), app.getDifficulty());
+        fallIntervalNs = baseFallIntervalNs;
         initializeGrid();
+
+        // Compute base fall interval from config (speed + difficulty), then set current
+        baseFallIntervalNs = computeFallIntervalNs(app.getGameSpeed(), app.getDifficulty());
+        fallIntervalNs = baseFallIntervalNs;
 
         HBox gameBox = new HBox(20);
         gameBox.setAlignment(Pos.CENTER);
@@ -65,19 +89,33 @@ public class GameScreen extends BorderPane {
         setCenter(gameBox);
         BorderPane.setMargin(gameBox, new Insets(20));
 
+        HBox buttonBox = new HBox(20);
+        buttonBox.setAlignment(Pos.CENTER);
+
+        Button pauseButton = new Button("Pause");
+        pauseButton.setOnAction(e -> togglePause());
+
         Button backButton = new Button("Back to Main Menu");
         backButton.setOnAction(e -> {
             stopGame();
             app.showMainScreen();
         });
-        setBottom(backButton);
-        BorderPane.setAlignment(backButton, Pos.CENTER);
-        BorderPane.setMargin(backButton, new Insets(20));
+
+        buttonBox.getChildren().addAll(pauseButton, backButton);
+        setBottom(buttonBox);
+        BorderPane.setAlignment(buttonBox, Pos.CENTER);
+        BorderPane.setMargin(buttonBox, new Insets(20));
+
+        // Create overlay after layout is set
+        createPauseOverlay();
 
         setupInputHandlers();
         generateNextTetramino();
         spawnTetramino();
         startGame();
+
+        // Ensure the canvas has focus so key events work
+        gameCanvas.requestFocus();
     }
 
     private void initializeGrid() {
@@ -122,11 +160,16 @@ public class GameScreen extends BorderPane {
     }
 
     private void setupInputHandlers() {
-        // Allow canvas to receive key events
+        // Key handlers are attached to the canvas; give it focus
         gameCanvas.setFocusTraversable(true);
+
         gameCanvas.setOnKeyPressed(e -> {
             if (currentTetramino == null) return;
             KeyCode code = e.getCode();
+
+            // When paused, ignore all except unpause
+            if (isPaused && code != KeyCode.P && code != KeyCode.ESCAPE) return;
+
             switch (code) {
                 case A -> {
                     if (!willCollide(-1, 0)) currentTetramino.move(-1, 0);
@@ -143,11 +186,11 @@ public class GameScreen extends BorderPane {
                     }
                 }
                 case W -> {
-                    // (Optional) rotate; only if implemented in Tetramino
-                    // rotateTetramino();
+                    // Optional rotate with W if you want
+                    // currentTetramino.rotateCW(); if (willCollide(0,0)) currentTetramino.rotateCCW();
                 }
                 case SPACE -> {
-                    // Hard drop (optional)
+                    // Hard drop
                     while (!willCollide(0, 1)) {
                         currentTetramino.move(0, 1);
                     }
@@ -156,27 +199,30 @@ public class GameScreen extends BorderPane {
                 case LEFT -> {
                     currentTetramino.rotateCCW();
                     if (willCollide(0, 0)) {
-                        // Undo rotation if collides
                         currentTetramino.rotateCW();
                     }
                 }
                 case RIGHT -> {
                     currentTetramino.rotateCW();
                     if (willCollide(0, 0)) {
-                        // Undo rotation if collides
                         currentTetramino.rotateCCW();
                     }
                 }
+                case P, ESCAPE -> togglePause();
             }
         });
+
+        // Make sure the canvas keeps focus when the mouse enters it
+        gameCanvas.setOnMouseEntered(e -> gameCanvas.requestFocus());
     }
 
     private void startGame() {
+        lastFall = 0; // fresh start
         loop = new AnimationTimer() {
-            private long lastFall = 0;
-
             @Override
             public void handle(long now) {
+                if (isPaused) return;
+
                 if (lastFall == 0) lastFall = now;
 
                 if (now - lastFall >= fallIntervalNs) {
@@ -194,15 +240,61 @@ public class GameScreen extends BorderPane {
         if (loop != null) loop.stop();
     }
 
+    private void createPauseOverlay() {
+        pauseOverlay = new BorderPane();
+        pauseOverlay.setStyle("-fx-background-color: rgba(0, 0, 0, 0.7);");
+        pauseOverlay.prefWidthProperty().bind(widthProperty());
+        pauseOverlay.prefHeightProperty().bind(heightProperty());
+
+        VBox content = new VBox(20);
+        content.setAlignment(Pos.CENTER);
+
+        Label pauseLabel = new Label("GAME PAUSED");
+        pauseLabel.setFont(Font.font("Arial", FontWeight.BOLD, 36));
+        pauseLabel.setTextFill(Color.WHITE);
+
+        Button resumeButton = new Button("Resume");
+        resumeButton.setOnAction(e -> togglePause());
+
+        Button mainMenuButton = new Button("Main Menu");
+        mainMenuButton.setOnAction(e -> {
+            stopGame();
+            app.showMainScreen();
+        });
+
+        content.getChildren().addAll(pauseLabel, resumeButton, mainMenuButton);
+        pauseOverlay.setCenter(content);
+
+        pauseOverlay.setVisible(false);
+        pauseOverlay.setManaged(false);
+        getChildren().add(pauseOverlay);
+    }
+
+    private void togglePause() {
+        isPaused = !isPaused;
+        if (isPaused) {
+            if (loop != null) loop.stop();
+            pauseOverlay.setVisible(true);
+            pauseOverlay.setManaged(true);
+            pauseOverlay.toFront();
+        } else {
+            pauseOverlay.setVisible(false);
+            pauseOverlay.setManaged(false);
+            // Prevent an immediate drop after resuming
+            lastFall = System.nanoTime();
+            if (loop != null) loop.start();
+        }
+    }
+
     private void generateNextTetramino(){
         int[][][] shapes = {
                 {{1, 1, 1, 1}},          // I
                 {{1, 1}, {1, 1}},        // O
-                {{0, 1, 0}, {1, 1, 1}},    // T
-                {{0, 1, 1}, {1, 1, 0}},    // S
-                {{1, 1, 0}, {0, 1, 1}},    // Z
-                {{1, 0, 0}, {1, 1, 1}},    // J
-                {{0, 0, 1}, {1, 1, 1}}     // L
+                {{0, 1, 0}, {1, 1, 1}},  // T
+                {{0, 1, 1}, {1, 1, 0}},  // S
+                {{1, 1, 0}, {0, 1, 1}},  // Z
+                {{1, 0, 0}, {1, 1, 1}},  // J
+                {{0, 0, 1}, {1, 1, 1}}   // L
         };
         nextColorIndex = random.nextInt(shapes.length) + 1;
         int[][] shape = shapes[nextColorIndex - 1];
@@ -210,7 +302,7 @@ public class GameScreen extends BorderPane {
         nextTetramino = new Tetramino(shape, 0, 0);
     }
 
-    private void spawnTetramino() { //now we use the next tetramino as the current tetramino to spawn
+    private void spawnTetramino() { // now we use the next tetramino as the current tetramino to spawn
         currentTetramino = nextTetramino;
         currentColorIndex = nextColorIndex;
         generateNextTetramino();
@@ -333,11 +425,32 @@ public class GameScreen extends BorderPane {
         levelValue.setText(String.valueOf(level));
     }
 
+    // Scale speed from the configured base, not a hard-coded 0.5s
     private void updateFallingSpeed(){
-        long baseInterval = 500_000_000L; // 0.5s
-        long speedupPer2Levels = 50_000_000L; // 0.05s per 2 levels (gentle)
-        int speedups = (level - 1) / 2;
-        fallIntervalNs = Math.max(100_000_000L, baseInterval - speedupPer2Levels * speedups);
+        // Every 2 levels, speed up by 10% (tweak to taste)
+        int speedups = Math.max(0, (level - 1) / 2);
+        double factor = Math.pow(0.9, speedups);
+        long newInterval = (long) (baseFallIntervalNs * Math.pow(LEVEL_ACCEL_FACTOR, Math.max(0, level - 1)));
+        // Clamp to a reasonable minimum
+        fallIntervalNs = Math.max(MIN_INTERVAL_NS, newInterval);
+    }
+
+    private long computeFallIntervalNs(int speed1to10, String difficulty) {
+        // Map speed 1..10 to 0.7s..0.07s linearly
+        int s = Math.min(10, Math.max(1, speed1to10));
+        double t = (s - 1) / 9.0; // 0..1
+        long base = (long) (BASE_MAX_INTERVAL_NS - t * (BASE_MAX_INTERVAL_NS - BASE_MIN_INTERVAL_NS));
+
+        // Difficulty multiplier
+        String d = difficulty == null ? "MEDIUM" : difficulty.trim().toUpperCase();
+        double mult = switch (d) {
+            case "EASY" -> 1.1;  // a bit slower
+            case "HARD" -> 0.85; // a bit faster
+            default -> 1.0;      // MEDIUM
+        };
+
+        long result = (long) (base * mult);
+        return Math.max(MIN_INTERVAL_NS, result);
     }
 
     public void drawGame() {
@@ -384,6 +497,7 @@ public class GameScreen extends BorderPane {
             }
         }
     }
+
     private void drawNextPiecePreview(){
         GraphicsContext ngc = nextPieceCanvas.getGraphicsContext2D();
         ngc.clearRect(0, 0, nextPieceCanvas.getWidth(), nextPieceCanvas.getHeight());

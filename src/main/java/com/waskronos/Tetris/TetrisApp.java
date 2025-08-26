@@ -5,6 +5,12 @@ import javafx.stage.Stage;
 
 public class TetrisApp extends Application {
     private Stage primaryStage;
+
+    private String difficulty = "Medium";
+    private boolean musicEnabled = false;
+    private boolean soundFX = false;
+    private int gameSpeed = 5;
+
     @Override
     public void start(Stage primayStage){
         this.primaryStage = primayStage;
@@ -36,5 +42,37 @@ public class TetrisApp extends Application {
 
     public void exitApplication(){
         primaryStage.close();
+    }
+
+    //Setting holder/setter/getter whatever
+    public String getDifficulty(){
+        return difficulty;
+    }
+    public void setDifficulty(String difficulty){
+        this.difficulty = difficulty;
+    }
+
+    public boolean isMusicEnabled(){
+        return musicEnabled;
+    }
+
+    public void setMusicEnabled(boolean musicEnabled){
+        this.musicEnabled = musicEnabled;
+    }
+    public boolean isSoundEffectsEnabled() {
+        return soundFX;
+    }
+    public void setSoundEffectsEnabled(boolean soundEffectsEnabled) {
+        this.soundFX = soundEffectsEnabled;
+    }
+
+    public int getGameSpeed() {
+        return gameSpeed;
+    }
+    public void setGameSpeed(int gameSpeed) {
+        // clamp to closest values so nothings unusual
+        if (gameSpeed < 1) gameSpeed = 1;
+        if (gameSpeed > 10) gameSpeed = 10;
+        this.gameSpeed = gameSpeed;
     }
 }

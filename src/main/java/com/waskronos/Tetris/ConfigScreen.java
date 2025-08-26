@@ -3,9 +3,9 @@ package com.waskronos.Tetris;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
-import javafx.scene.layout.Border;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
@@ -52,13 +52,30 @@ public class ConfigScreen extends BorderPane {
 
         setCenter(configGrid);
 
+        HBox buttonBox = new HBox(20);
+        buttonBox.setAlignment(Pos.CENTER);
+
+        Button saveButton = new Button("Save settings");
+        saveButton.setOnAction(e-> {
+            app.setDifficulty(difficultyCombo.getValue());
+            app.setMusicEnabled(musicCheckbox.isSelected());
+            app.setGameSpeed((int) speedSlider.getValue());
+            app.setSoundEffectsEnabled(sfxCheckbox.isSelected());
+
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Settings Saved");
+            alert.setHeaderText(null);
+            alert.setContentText("Your settings have been saved.");
+            alert.showAndWait();
+        });
+
         Button backButton = new Button("Back to Main Menu");
         backButton.setOnAction(e -> app.showMainScreen());
 
-        setBottom(backButton);
-        BorderPane.setAlignment(backButton, Pos.CENTER);
-        BorderPane.setMargin(backButton, new Insets(20));
-
+        buttonBox.getChildren().addAll(saveButton, backButton);
+        setBottom(buttonBox);
+        BorderPane.setAlignment(buttonBox, Pos.CENTER);
+        BorderPane.setMargin(buttonBox, new Insets(20));
     }
 
 }
