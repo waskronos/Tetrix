@@ -12,14 +12,14 @@ public class MainScreen extends BorderPane {
     private TetrisApp app;
     public MainScreen(TetrisApp app){
         this.app = app;
-        Label titleLabel = new Label("TETRIS");
+        Label titleLabel = new Label("TETRIX");
         titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 47));
         setTop(titleLabel);
         BorderPane.setAlignment(titleLabel, Pos.CENTER);
 
+        Button playButton = createButton("Play");
         Button configButton = createButton("Configure");
         Button exitButton = createButton("Exit");
-        Button playButton = createButton("Play");
 
         configButton.setOnAction(e -> app.showConfiguration());
         exitButton.setOnAction(e -> app.exitApplication());
@@ -27,7 +27,7 @@ public class MainScreen extends BorderPane {
 
         VBox buttonBox = new VBox(20);
         buttonBox.setAlignment(Pos.CENTER);
-        buttonBox.getChildren().addAll(configButton,exitButton, playButton);
+        buttonBox.getChildren().addAll(playButton, configButton,exitButton);
 
         setCenter(buttonBox);
     }

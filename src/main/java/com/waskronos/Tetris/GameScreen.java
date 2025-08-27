@@ -10,18 +10,19 @@ import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
-
+import javafx.scene.media.AudioClip;
 import java.util.Random;
 
 public class GameScreen extends BorderPane {
 
-    private TetrisApp app;
-    private Canvas gameCanvas;
-    private GraphicsContext gc;
+    private final TetrisApp app;
+    private final Canvas gameCanvas;
+    private final GraphicsContext gc;
     private AnimationTimer loop;
 
     private final int GRID_WIDTH = 10;
@@ -31,30 +32,26 @@ public class GameScreen extends BorderPane {
     private boolean isPaused = false;
     private BorderPane pauseOverlay;
 
-    // Use the class field for timing so we can reset it on resume
     private long lastFall = 0;
 
-    // Grid stores 0 = empty, 1..7 = fixed block with color id
-    private int[][] grid = new int[GRID_HEIGHT][GRID_WIDTH];
+    private final int[][] grid = new int[GRID_HEIGHT][GRID_WIDTH];
 
     private Tetramino currentTetramino;
     private int currentColorIndex;
 
     private Tetramino nextTetramino;
     private int nextColorIndex;  // 1..7 matches getColor
-    private Random random = new Random();
+    private final Random random = new Random();
 
-    // Timing (controlled by config + level)
-    private long fallIntervalNs = 500_000_000L;    // current interval
+    private long fallIntervalNs = 500_000_000L;
     private long baseFallIntervalNs = 500_000_000L;
-    private static final long BASE_MAX_INTERVAL_NS = 700_000_000L; // ~0.7s at speed=1
-    private static final long BASE_MIN_INTERVAL_NS = 70_000_000L;  // ~0.07s at speed=10
-    private static final long MIN_INTERVAL_NS      = 50_000_000L;  // absolute clamp ~0.05s
-    private static final double LEVEL_ACCEL_FACTOR = 0.85;         // 15% faster each level
+    private static final long BASE_MAX_INTERVAL_NS = 700_000_000L;
+    private static final long BASE_MIN_INTERVAL_NS = 70_000_000L;
+    private static final long MIN_INTERVAL_NS      = 50_000_000L;
+    private static final double LEVEL_ACCEL_FACTOR = 0.80;
 
-    // Leveling by lines (classic)
     private int totalLinesCleared = 0;
-    private int linesPerLevel = 10; // every 10 lines, next level
+    private int linesPerLevel = 10;
 
     private int score = 0;
     private int level = 1;
@@ -64,19 +61,48 @@ public class GameScreen extends BorderPane {
     private String difficulty = "MEDIUM";
     private Canvas nextPieceCanvas;
 
+    private boolean isGameOver = false;
+    private double gameOverY = -60;
+
+    private Button backButton;
+    private Button pauseButton;
+
+    private Font ui20;
+    private Font ui18;
+
+    private AudioClip sfxSlam, sfxLand, sfxLine, sfxLevel, sfxMove, sfxGameOver;
+    private boolean wasSlam = false;
+
+    private StackPane centerStack;
+
     public GameScreen(TetrisApp app) {
         this.app = app;
+        this.app.enterGame(); //Mute BGM while in game
 
-        // Pull difficulty from app for UI and preview behavior
         this.difficulty = (app.getDifficulty() == null) ? "MEDIUM" : app.getDifficulty().trim().toUpperCase();
-        // Compute base fall interval from Config (speed + difficulty), then set current
-        baseFallIntervalNs = computeFallIntervalNs(app.getGameSpeed(), app.getDifficulty());
-        fallIntervalNs = baseFallIntervalNs;
-        initializeGrid();
 
-        // Compute base fall interval from config (speed + difficulty), then set current
+        ui20 = Font.loadFont(getClass().getResourceAsStream("/fonts/pixelbold.ttf"), 20);
+        ui18 = Font.loadFont(getClass().getResourceAsStream("/fonts/pixel.ttf"), 18);
+        if (ui20 == null) ui20 = Font.font("Arial", 20);
+        if (ui18 == null) ui18 = Font.font("Arial", 18);
+
+        var u1 = getClass().getResource("/sounds/slam.wav");
+        if (u1 != null) sfxSlam = new AudioClip(u1.toExternalForm());
+        var u2 = getClass().getResource("/sounds/land.mp3");
+        if (u2 != null) sfxLand = new AudioClip(u2.toExternalForm());
+        var u3 = getClass().getResource("/sounds/clear.wav");
+        if (u3 != null) sfxLine = new AudioClip(u3.toExternalForm());
+        var u4 = getClass().getResource("/sounds/lvup.wav");
+        if (u4 != null) sfxLevel = new AudioClip(u4.toExternalForm());
+        var u5 = getClass().getResource("/sounds/move.wav");
+        if (u5 != null) sfxMove = new AudioClip(u5.toExternalForm());
+        var u6 = getClass().getResource("/sounds/gameover.mp3");
+        if (u6 != null) sfxGameOver = new AudioClip(u6.toExternalForm());
+
         baseFallIntervalNs = computeFallIntervalNs(app.getGameSpeed(), app.getDifficulty());
         fallIntervalNs = baseFallIntervalNs;
+
+        initializeGrid();
 
         HBox gameBox = new HBox(20);
         gameBox.setAlignment(Pos.CENTER);
@@ -86,18 +112,24 @@ public class GameScreen extends BorderPane {
 
         VBox statsPanel = createStatsPanel();
         gameBox.getChildren().addAll(gameCanvas, statsPanel);
-        setCenter(gameBox);
-        BorderPane.setMargin(gameBox, new Insets(20));
+
+        createPauseOverlay();
+
+        centerStack = new StackPane();
+        centerStack.getChildren().addAll(gameBox, pauseOverlay);
+        setCenter(centerStack);
+        BorderPane.setMargin(centerStack, new Insets(20));
 
         HBox buttonBox = new HBox(20);
         buttonBox.setAlignment(Pos.CENTER);
 
-        Button pauseButton = new Button("Pause");
-        pauseButton.setOnAction(e -> togglePause());
+        pauseButton = new Button("Pause");
+        pauseButton.setOnAction(e -> handlePauseOrRestart());
 
-        Button backButton = new Button("Back to Main Menu");
+        backButton = new Button("Back to Main Menu");
         backButton.setOnAction(e -> {
             stopGame();
+            app.exitGame(); // Unmute BGM when exiting
             app.showMainScreen();
         });
 
@@ -106,15 +138,11 @@ public class GameScreen extends BorderPane {
         BorderPane.setAlignment(buttonBox, Pos.CENTER);
         BorderPane.setMargin(buttonBox, new Insets(20));
 
-        // Create overlay after layout is set
-        createPauseOverlay();
-
         setupInputHandlers();
         generateNextTetramino();
         spawnTetramino();
         startGame();
 
-        // Ensure the canvas has focus so key events work
         gameCanvas.requestFocus();
     }
 
@@ -129,26 +157,25 @@ public class GameScreen extends BorderPane {
     private VBox createStatsPanel() {
         VBox statsPanel = new VBox(20);
         statsPanel.setAlignment(Pos.CENTER);
-        statsPanel.setPrefWidth(120);
 
         Label nextLabel = new Label("NEXT");
-        nextLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
+        nextLabel.setFont(ui20);
         nextPieceCanvas = new Canvas(80, 80);
 
         Label scoreLabel = new Label("SCORE");
-        scoreLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
+        scoreLabel.setFont(ui20);
         scoreValue = new Label("0");
-        scoreValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
+        scoreValue.setFont(ui18);
 
         Label levelLabel = new Label("LEVEL");
-        levelLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
+        levelLabel.setFont(ui20);
         levelValue = new Label("1");
-        levelValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
+        levelValue.setFont(ui18);
 
         Label diffiLabel = new Label("DIFFICULTY");
-        diffiLabel.setFont(Font.font("ARIAL", FontWeight.BOLD, 20));
+        diffiLabel.setFont(ui20);
         Label diffiValue = new Label(difficulty);
-        diffiValue.setFont(Font.font("ARIAL", FontWeight.BOLD, 18));
+        diffiValue.setFont(ui18);
 
         statsPanel.getChildren().addAll(
                 nextLabel, nextPieceCanvas,
@@ -160,37 +187,33 @@ public class GameScreen extends BorderPane {
     }
 
     private void setupInputHandlers() {
-        // Key handlers are attached to the canvas; give it focus
         gameCanvas.setFocusTraversable(true);
 
         gameCanvas.setOnKeyPressed(e -> {
             if (currentTetramino == null) return;
             KeyCode code = e.getCode();
 
-            // When paused, ignore all except unpause
             if (isPaused && code != KeyCode.P && code != KeyCode.ESCAPE) return;
 
             switch (code) {
                 case A -> {
                     if (!willCollide(-1, 0)) currentTetramino.move(-1, 0);
+                    if (app.isSoundEffectsEnabled() && sfxMove != null) sfxMove.play();
                 }
                 case D -> {
                     if (!willCollide(1, 0)) currentTetramino.move(1, 0);
+                    if (app.isSoundEffectsEnabled() && sfxMove != null) sfxMove.play();
                 }
                 case S -> {
-                    // Soft drop
                     if (!willCollide(0, 1)) {
                         currentTetramino.move(0, 1);
+                        if (app.isSoundEffectsEnabled() && sfxMove != null) sfxMove.play();
                     } else {
                         lockAndSpawn();
                     }
                 }
-                case W -> {
-                    // Optional rotate with W if you want
-                    // currentTetramino.rotateCW(); if (willCollide(0,0)) currentTetramino.rotateCCW();
-                }
                 case SPACE -> {
-                    // Hard drop
+                    wasSlam = true;
                     while (!willCollide(0, 1)) {
                         currentTetramino.move(0, 1);
                     }
@@ -198,26 +221,21 @@ public class GameScreen extends BorderPane {
                 }
                 case LEFT -> {
                     currentTetramino.rotateCCW();
-                    if (willCollide(0, 0)) {
-                        currentTetramino.rotateCW();
-                    }
+                    if (willCollide(0, 0)) currentTetramino.rotateCW();
                 }
                 case RIGHT -> {
                     currentTetramino.rotateCW();
-                    if (willCollide(0, 0)) {
-                        currentTetramino.rotateCCW();
-                    }
+                    if (willCollide(0, 0)) currentTetramino.rotateCCW();
                 }
                 case P, ESCAPE -> togglePause();
             }
         });
 
-        // Make sure the canvas keeps focus when the mouse enters it
         gameCanvas.setOnMouseEntered(e -> gameCanvas.requestFocus());
     }
 
     private void startGame() {
-        lastFall = 0; // fresh start
+        lastFall = 0;
         loop = new AnimationTimer() {
             @Override
             public void handle(long now) {
@@ -225,9 +243,12 @@ public class GameScreen extends BorderPane {
 
                 if (lastFall == 0) lastFall = now;
 
-                if (now - lastFall >= fallIntervalNs) {
+                if (!isGameOver && now - lastFall >= fallIntervalNs) {
                     updateGame();
                     lastFall = now;
+                } else if (isGameOver) {
+                    double targetY = (GRID_HEIGHT * CELL_SIZE) / 2.0 - 20;
+                    if (gameOverY < targetY) gameOverY += 6;
                 }
                 drawGame();
                 drawNextPiecePreview();
@@ -243,8 +264,8 @@ public class GameScreen extends BorderPane {
     private void createPauseOverlay() {
         pauseOverlay = new BorderPane();
         pauseOverlay.setStyle("-fx-background-color: rgba(0, 0, 0, 0.7);");
-        pauseOverlay.prefWidthProperty().bind(widthProperty());
-        pauseOverlay.prefHeightProperty().bind(heightProperty());
+        pauseOverlay.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        pauseOverlay.setPickOnBounds(true);
 
         VBox content = new VBox(20);
         content.setAlignment(Pos.CENTER);
@@ -259,6 +280,7 @@ public class GameScreen extends BorderPane {
         Button mainMenuButton = new Button("Main Menu");
         mainMenuButton.setOnAction(e -> {
             stopGame();
+            app.exitGame(); // Unmute BGM
             app.showMainScreen();
         });
 
@@ -267,7 +289,40 @@ public class GameScreen extends BorderPane {
 
         pauseOverlay.setVisible(false);
         pauseOverlay.setManaged(false);
-        getChildren().add(pauseOverlay);
+    }
+
+    private void handlePauseOrRestart() {
+        if (isGameOver) {
+            restartGame();
+        } else {
+            togglePause();
+        }
+    }
+
+    private void restartGame() {
+        isGameOver = false;
+        isPaused = false;
+        wasSlam = false;
+        gameOverY = -60;
+
+        pauseOverlay.setVisible(false);
+        pauseOverlay.setManaged(false);
+
+        initializeGrid();
+        score = 0;
+        level = 1;
+        totalLinesCleared = 0;
+        updateStatsLabels();
+
+        fallIntervalNs = baseFallIntervalNs;
+        lastFall = 0;
+
+        pauseButton.setText("Pause");
+        pauseButton.setDisable(false);
+        backButton.setDisable(false);
+
+        generateNextTetramino();
+        spawnTetramino();
     }
 
     private void togglePause() {
@@ -280,7 +335,6 @@ public class GameScreen extends BorderPane {
         } else {
             pauseOverlay.setVisible(false);
             pauseOverlay.setManaged(false);
-            // Prevent an immediate drop after resuming
             lastFall = System.nanoTime();
             if (loop != null) loop.start();
         }
@@ -288,21 +342,20 @@ public class GameScreen extends BorderPane {
 
     private void generateNextTetramino(){
         int[][][] shapes = {
-                {{1, 1, 1, 1}},          // I
-                {{1, 1}, {1, 1}},        // O
-                {{0, 1, 0}, {1, 1, 1}},  // T
-                {{0, 1, 1}, {1, 1, 0}},  // S
-                {{1, 1, 0}, {0, 1, 1}},  // Z
-                {{1, 0, 0}, {1, 1, 1}},  // J
-                {{0, 0, 1}, {1, 1, 1}}   // L
+                {{1, 1, 1, 1}},
+                {{1, 1}, {1, 1}},
+                {{0, 1, 0}, {1, 1, 1}},
+                {{0, 1, 1}, {1, 1, 0}},
+                {{1, 1, 0}, {0, 1, 1}},
+                {{1, 0, 0}, {1, 1, 1}},
+                {{0, 0, 1}, {1, 1, 1}}
         };
         nextColorIndex = random.nextInt(shapes.length) + 1;
         int[][] shape = shapes[nextColorIndex - 1];
-        // Centered at (0,0) for preview
         nextTetramino = new Tetramino(shape, 0, 0);
     }
 
-    private void spawnTetramino() { // now we use the next tetramino as the current tetramino to spawn
+    private void spawnTetramino() {
         currentTetramino = nextTetramino;
         currentColorIndex = nextColorIndex;
         generateNextTetramino();
@@ -311,18 +364,27 @@ public class GameScreen extends BorderPane {
         int startY = 0;
         currentTetramino.setPosition(startX, startY);
 
-        // Immediate game over detection if spawn position collides = no more space
         if (willCollide(0, 0)) {
-            stopGame();
-            System.out.println("GAME OVER");
+            isGameOver = true;
             currentTetramino = null;
+            gameOverY = -60;
+
+            if (app.isSoundEffectsEnabled() && sfxGameOver != null) sfxGameOver.play();
+
+            if (pauseButton != null) {
+                pauseButton.setText("Restart");
+                pauseButton.setDisable(false);
+            }
+            if (backButton != null) {
+                backButton.setDisable(false);
+            }
+            return;
         }
     }
 
     private void updateGame() {
         if (currentTetramino == null) return;
 
-        // If moving down would collide -> lock & spawn new
         if (willCollide(0, 1)) {
             lockAndSpawn();
         } else {
@@ -331,6 +393,14 @@ public class GameScreen extends BorderPane {
     }
 
     private void lockAndSpawn() {
+        if (app.isSoundEffectsEnabled()) {
+            if (wasSlam) {
+                if (sfxSlam != null) sfxSlam.play();
+            } else {
+                if (sfxLand != null) sfxLand.play();
+            }
+        }
+        wasSlam = false;
         placeTetramino();
         addScoreForLand();
         clearCompletedLines();
@@ -350,11 +420,8 @@ public class GameScreen extends BorderPane {
                 int gridX = baseX + c;
                 int gridY = baseY + r;
 
-                // Outside bottom
                 if (gridY >= GRID_HEIGHT) return true;
-                // Outside sides
                 if (gridX < 0 || gridX >= GRID_WIDTH) return true;
-                // Collides with fixed block
                 if (gridY >= 0 && grid[gridY][gridX] != 0) return true;
             }
         }
@@ -387,36 +454,36 @@ public class GameScreen extends BorderPane {
             }
             if (full) {
                 linesClearedThisDrop++;
-                // Shift everything down
                 for (int row = y; row > 0; row--) {
                     System.arraycopy(grid[row - 1], 0, grid[row], 0, GRID_WIDTH);
                 }
-                // Clear top row
                 for (int x = 0; x < GRID_WIDTH; x++) grid[0][x] = 0;
-                y++; // re-check same y after shifting
+                y++;
             }
         }
         if (linesClearedThisDrop > 0) {
+            if (app.isSoundEffectsEnabled() && sfxLine != null) sfxLine.play();
             addScoreForLines(linesClearedThisDrop);
         }
     }
 
     private void addScoreForLines(int lines){
-        score += 10*lines;
+        score += 40*lines;
         updateLevel();
         updateStatsLabels();
     }
     private void addScoreForLand(){
-        score += 1;
+        score += 5;
         updateLevel();
         updateStatsLabels();
     }
 
     private void updateLevel(){
-        int newLevel = score/50+1;
+        int newLevel = score/150+1;
         if (newLevel != level){
             level = newLevel;
             updateFallingSpeed();
+            if (app.isSoundEffectsEnabled() && sfxLevel != null) sfxLevel.play();
         }
     }
 
@@ -425,28 +492,21 @@ public class GameScreen extends BorderPane {
         levelValue.setText(String.valueOf(level));
     }
 
-    // Scale speed from the configured base, not a hard-coded 0.5s
     private void updateFallingSpeed(){
-        // Every 2 levels, speed up by 10% (tweak to taste)
-        int speedups = Math.max(0, (level - 1) / 2);
-        double factor = Math.pow(0.9, speedups);
         long newInterval = (long) (baseFallIntervalNs * Math.pow(LEVEL_ACCEL_FACTOR, Math.max(0, level - 1)));
-        // Clamp to a reasonable minimum
         fallIntervalNs = Math.max(MIN_INTERVAL_NS, newInterval);
     }
 
     private long computeFallIntervalNs(int speed1to10, String difficulty) {
-        // Map speed 1..10 to 0.7s..0.07s linearly
         int s = Math.min(10, Math.max(1, speed1to10));
-        double t = (s - 1) / 9.0; // 0..1
+        double t = (s - 1) / 9.0;
         long base = (long) (BASE_MAX_INTERVAL_NS - t * (BASE_MAX_INTERVAL_NS - BASE_MIN_INTERVAL_NS));
 
-        // Difficulty multiplier
         String d = difficulty == null ? "MEDIUM" : difficulty.trim().toUpperCase();
         double mult = switch (d) {
-            case "EASY" -> 1.1;  // a bit slower
-            case "HARD" -> 0.85; // a bit faster
-            default -> 1.0;      // MEDIUM
+            case "EASY" -> 1.1;
+            case "HARD" -> 0.85;
+            default -> 1.0;
         };
 
         long result = (long) (base * mult);
@@ -468,7 +528,6 @@ public class GameScreen extends BorderPane {
             gc.strokeLine(0, y * CELL_SIZE, GRID_WIDTH * CELL_SIZE, y * CELL_SIZE);
         }
 
-        // Fixed blocks
         for (int y = 0; y < GRID_HEIGHT; y++) {
             for (int x = 0; x < GRID_WIDTH; x++) {
                 if (grid[y][x] > 0) {
@@ -477,7 +536,6 @@ public class GameScreen extends BorderPane {
             }
         }
 
-        // Falling piece
         if (currentTetramino != null) {
             int[][] shape = currentTetramino.getShape();
             int baseX = currentTetramino.getX();
@@ -496,6 +554,19 @@ public class GameScreen extends BorderPane {
                 }
             }
         }
+
+        if (isGameOver) {
+            gc.setFill(Color.color(0, 0, 0, 0.6));
+            gc.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
+
+            gc.setFont(ui20 != null ? ui20 : Font.font("ARIAL", 20));
+            gc.setFill(Color.WHITE);
+
+            double x = (GRID_WIDTH * CELL_SIZE) / 2.0 - 100;
+            gc.fillText("GAME OVER", x, gameOverY);
+            gc.fillText("Score: " + score, x, gameOverY + 30);
+            gc.fillText("Level: " + level, x, gameOverY + 60);
+        }
     }
 
     private void drawNextPiecePreview(){
@@ -505,7 +576,7 @@ public class GameScreen extends BorderPane {
         if (difficulty.equalsIgnoreCase("HARD")){
             ngc.setFont(Font.font("ARIAL", FontWeight.BOLD, 48));
             ngc.setFill(Color.DARKRED);
-            ngc.fillText("\uD83D\uDC80", 20, 56); // Skull emoji
+            ngc.fillText("\uD83D\uDC80", 20, 56);
             return;
         }
 

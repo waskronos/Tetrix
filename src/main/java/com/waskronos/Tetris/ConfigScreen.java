@@ -1,3 +1,4 @@
+
 package com.waskronos.Tetris;
 
 import javafx.geometry.Insets;
@@ -10,7 +11,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
 public class ConfigScreen extends BorderPane {
-    private TetrisApp app;
+    private final TetrisApp app;
 
     public ConfigScreen(TetrisApp app) {
         this.app = app;
@@ -19,6 +20,7 @@ public class ConfigScreen extends BorderPane {
         titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 36));
         setTop(titleLabel);
         BorderPane.setAlignment(titleLabel, Pos.CENTER);
+        BorderPane.setMargin(titleLabel, new Insets(12));
 
         GridPane configGrid = new GridPane();
         configGrid.setHgap(10);
@@ -26,28 +28,34 @@ public class ConfigScreen extends BorderPane {
         configGrid.setPadding(new Insets(20));
         configGrid.setAlignment(Pos.CENTER);
 
+        // Difficulty selection
         configGrid.add(new Label("Difficulty"), 0, 0);
         ComboBox<String> difficultyCombo = new ComboBox<>();
         difficultyCombo.getItems().addAll("Easy", "Medium", "Hard");
-        difficultyCombo.setValue("Medium");
+        difficultyCombo.setValue(app.getDifficulty()); // Set initial value from app
         configGrid.add(difficultyCombo, 1, 0);
 
+        // Music toggle
         configGrid.add(new Label("Music"), 0, 1);
         CheckBox musicCheckbox = new CheckBox("Enable Music");
-        configGrid.add(musicCheckbox, 1, 2);
+        musicCheckbox.setSelected(app.isMusicEnabled()); // init from app
+        configGrid.add(musicCheckbox, 1, 1);
 
+        // Speed slider
         configGrid.add(new Label("Speed"), 0, 2);
-        Slider speedSlider = new Slider(1, 10, 1);
+        Slider speedSlider = new Slider(1, 10, app.getGameSpeed());
         speedSlider.setShowTickLabels(true);
         speedSlider.setShowTickMarks(true);
         speedSlider.setMajorTickUnit(1);
         speedSlider.setMinorTickCount(0);
         speedSlider.setBlockIncrement(1);
         speedSlider.setSnapToTicks(true);
-        configGrid.add(speedSlider, 1, 1);
+        configGrid.add(speedSlider, 1, 2);
 
+        // Sound effects toggle
         configGrid.add(new Label("Sound effects"), 0, 3);
         CheckBox sfxCheckbox = new CheckBox("Enable Sound Effects");
+        sfxCheckbox.setSelected(app.isSoundEffectsEnabled());
         configGrid.add(sfxCheckbox, 1, 3);
 
         setCenter(configGrid);
@@ -56,7 +64,7 @@ public class ConfigScreen extends BorderPane {
         buttonBox.setAlignment(Pos.CENTER);
 
         Button saveButton = new Button("Save settings");
-        saveButton.setOnAction(e-> {
+        saveButton.setOnAction(e -> {
             app.setDifficulty(difficultyCombo.getValue());
             app.setMusicEnabled(musicCheckbox.isSelected());
             app.setGameSpeed((int) speedSlider.getValue());
@@ -77,5 +85,4 @@ public class ConfigScreen extends BorderPane {
         BorderPane.setAlignment(buttonBox, Pos.CENTER);
         BorderPane.setMargin(buttonBox, new Insets(20));
     }
-
 }

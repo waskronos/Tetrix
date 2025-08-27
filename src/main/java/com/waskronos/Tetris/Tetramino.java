@@ -7,7 +7,7 @@ public class Tetramino {
     private int y;
 
     public Tetramino(int[][] shape, int startX, int startY) {
-        // Deep copy to be safe
+        // Deep copy the shape array
         this.shape = new int[shape.length][];
         for (int i = 0; i < shape.length; i++) {
             this.shape[i] = shape[i].clone();
@@ -16,20 +16,20 @@ public class Tetramino {
         this.y = startY;
     }
 
-        public int[][] getShape() {
-            return shape;
-        }
+    public int[][] getShape() {
+        return shape;
+    }
 
     public int getX() { return x; }
     public int getY() { return y; }
 
-    public void move(int dx, int dy) { //function made to ensure moving is uniform in any direction (flexible) and any amount
+    public void move(int dx, int dy) { // Move tetramino by offset
         x += dx;
         y += dy;
     }
 
     public void moveDown() { y++; }
-    public void moveUp() { y--; }   // Only needed if you revert a move-after-collision approach
+    public void moveUp() { y--; }   // Needed if you revert a move-after-collision approach
     public void moveLeft() { x--; }
     public void moveRight() { x++; }
 
@@ -38,7 +38,6 @@ public class Tetramino {
         this.y = ny;
     }
 
-    // Basic (no wall-kick) rotation example (clockwise)
     public void rotateCW() {
         int rows = shape.length;
         int cols = shape[0].length;
@@ -51,7 +50,6 @@ public class Tetramino {
         shape = rotated;
     }
 
-    // Counter-clockwise
     public void rotateCCW() {
         int rows = shape.length;
         int cols = shape[0].length;
