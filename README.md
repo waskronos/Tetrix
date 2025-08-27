@@ -7,16 +7,6 @@ Created as part of
 
 Tetrix challenges players to strategically position falling tetromino pieces to create complete horizontal lines. When a line is completed, it disappears, and the player earns points. The game progressively increases in difficulty as the player advances, with pieces falling at faster speeds.
 
-## Features
-
---- STILL IN DEVELOPMENT ---
-
-## Game Controls
-
-
-## Screenshots
-
-*(Screenshots will be added as development progresses)*
 
 ## Technical Implementation
 
@@ -34,12 +24,12 @@ The architecture follows object-oriented design principles with clean separation
 - [x] Basic application structure and navigation
 - [x] Configuration screen with customizable settings
 - [x] Basic game screen with animation
-- [ ] Complete Tetromino implementation (all 7 classic shapes)
-- [ ] Game grid with collision detection
-- [ ] Score tracking system
-- [ ] Level progression
-- [ ] Audio feedback and music
-- [ ] High score persistence
+- [x] Complete Tetromino implementation (all 7 classic shapes)
+- [x] Game grid with collision detection
+- [x] Score tracking system
+- [x] Level progression
+- [x Audio feedback and music
+- [x] High score persistence
 
 ## Getting Started
 
@@ -65,8 +55,6 @@ The architecture follows object-oriented design principles with clean separation
 ## Team Members
 
 -Agampreet Singh
-
--Harry Arnold
 
 -Jason Nathan Corotan
 
