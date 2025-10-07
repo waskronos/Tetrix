@@ -1,4 +1,4 @@
-package com.waskronos.Tetris;
+package com.waskronos.Tetris.app;
 
 import javafx.application.Application;
 

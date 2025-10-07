@@ -1,5 +1,6 @@
-package com.waskronos.Tetris;
+package com.waskronos.Tetris.app;
 
+import com.waskronos.Tetris.ui.*;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.media.Media;
@@ -24,13 +25,11 @@ public class TetrisApp extends Application {
         primaryStage.setWidth(900);
         primaryStage.setHeight(900);
 
-        // Create MediaPlayer instance
         var bgmUrl = getClass().getResource("/sounds/bgm.mp3");
         if (bgmUrl != null) {
             bgmPlayer = new MediaPlayer(new Media(bgmUrl.toExternalForm()));
             bgmPlayer.setCycleCount(MediaPlayer.INDEFINITE);
             bgmPlayer.setVolume(0.6);
-            // Start playback. Muting handled later
             if (musicEnabled) {
                 bgmPlayer.play();
             }
@@ -40,6 +39,19 @@ public class TetrisApp extends Application {
 
         showSplashScreen();
         primaryStage.show();
+        enforceMaximized();
+    }
+
+    private void enforceMaximized() {
+        primaryStage.setFullScreen(false);
+        primaryStage.setMaximized(true);
+        primaryStage.setMinWidth(900);
+        primaryStage.setMinHeight(900);
+    }
+
+    private void applyStyles(Scene scene) {
+        var cssUrl = getClass().getResource("/styles/app.css");
+        if (cssUrl != null) scene.getStylesheets().add(cssUrl.toExternalForm());
     }
 
     public void showSplashScreen() {
@@ -47,19 +59,31 @@ public class TetrisApp extends Application {
         if (bgmPlayer != null) bgmPlayer.setMute(false);
         SplashScreen splash = new SplashScreen(this);
         Scene scene = new Scene(splash);
+        applyStyles(scene);
         primaryStage.setScene(scene);
+        enforceMaximized();
     }
 
-    public void onSplashFinished() {
-        showMainScreen();
-    }
+    public void onSplashFinished() { showMainScreen(); }
 
     public void showMainScreen(){
         inGame = false;
         if (bgmPlayer != null) bgmPlayer.setMute(false);
         MainScreen mainScreen = new MainScreen(this);
         Scene scene = new Scene(mainScreen);
+        applyStyles(scene);
         primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
+    public void showModeSelectScreen() {
+        inGame = false;
+        if (bgmPlayer != null) bgmPlayer.setMute(false);
+        ModeSelectScreen screen = new ModeSelectScreen(this);
+        Scene scene = new Scene(screen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
     }
 
     public void showConfiguration(){
@@ -67,7 +91,9 @@ public class TetrisApp extends Application {
         if (bgmPlayer != null) bgmPlayer.setMute(false);
         ConfigScreen configScreen = new ConfigScreen(this);
         Scene scene = new Scene(configScreen);
+        applyStyles(scene);
         primaryStage.setScene(scene);
+        enforceMaximized();
     }
 
     public void showGameScreen(){
@@ -75,7 +101,40 @@ public class TetrisApp extends Application {
         if (bgmPlayer != null) bgmPlayer.setMute(true);
         GameScreen gameScreen = new GameScreen(this);
         Scene scene = new Scene(gameScreen);
+        applyStyles(scene);
         primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
+    public void showGameScreenAssisted(){
+        inGame = true;
+        if (bgmPlayer != null) bgmPlayer.setMute(true);
+        GameScreen gameScreen = new GameScreen(this);
+        gameScreen.setAiActive(true);
+        Scene scene = new Scene(gameScreen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
+    public void showTwoPlayerScreen() {
+        inGame = true;
+        if (bgmPlayer != null) bgmPlayer.setMute(true);
+        TwoPlayerScreen screen = new TwoPlayerScreen(this);
+        Scene scene = new Scene(screen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
+    public void showHighScoresScreen() {
+        inGame = false;
+        if (bgmPlayer != null) bgmPlayer.setMute(false);
+        HighScoresScreen screen = new HighScoresScreen(this);
+        Scene scene = new Scene(screen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
     }
 
     public void exitApplication(){
@@ -87,7 +146,6 @@ public class TetrisApp extends Application {
         primaryStage.close();
     }
 
-    // GameScreen notifies when entering/leaving game
     public void enterGame() {
         inGame = true;
         if (bgmPlayer != null) bgmPlayer.setMute(true);
@@ -96,7 +154,6 @@ public class TetrisApp extends Application {
         inGame = false;
         if (bgmPlayer != null) {
             bgmPlayer.setMute(false);
-            // Resume if enabled and not playing
             if (musicEnabled && bgmPlayer.getStatus() != MediaPlayer.Status.PLAYING) {
                 bgmPlayer.play();
             }
@@ -110,9 +167,7 @@ public class TetrisApp extends Application {
     public void setMusicEnabled(boolean musicEnabled){
         this.musicEnabled = musicEnabled;
         if (bgmPlayer == null) return;
-
         if (musicEnabled) {
-            // Start playback if not playing
             if (bgmPlayer.getStatus() != MediaPlayer.Status.PLAYING) bgmPlayer.play();
             bgmPlayer.setMute(inGame);
         } else {

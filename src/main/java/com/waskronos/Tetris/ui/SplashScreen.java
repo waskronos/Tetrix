@@ -1,5 +1,6 @@
-package com.waskronos.Tetris;
+package com.waskronos.Tetris.ui;
 
+import com.waskronos.Tetris.app.TetrisApp;
 import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
 import javafx.scene.layout.BorderPane;
@@ -8,7 +9,10 @@ import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
 import javafx.util.Duration;
 
-public class SplashScreen extends BorderPane{
+public class SplashScreen extends BorderPane {
+    // This screen plays a short video then continues
+    // This falls back to the next screen on error or timeout
+
     private final TetrisApp app;
     private MediaPlayer splashPlayer;
 
@@ -28,23 +32,17 @@ public class SplashScreen extends BorderPane{
 
             MediaView view = new MediaView(splashPlayer);
             view.setPreserveRatio(true);
-
-            // Scale video and center
             view.fitWidthProperty().bind(widthProperty().multiply(0.6));
             view.fitHeightProperty().bind(heightProperty().multiply(0.6));
-
-            // White background to blend
-            setStyle("-fx-background-color: white;");
 
             setCenter(view);
             BorderPane.setAlignment(view, Pos.CENTER);
         } else {
-            System.out.println("[SPLASH] Missing /video/splash.mp4, skipping splash.");
+            System.out.println("[SPLASH] Missing /video/splash.mp4");
             finish();
             return;
         }
 
-        // Timeout if media events fail
         PauseTransition timeout = new PauseTransition(Duration.seconds(3.2));
         timeout.setOnFinished(e -> finish());
         timeout.play();
