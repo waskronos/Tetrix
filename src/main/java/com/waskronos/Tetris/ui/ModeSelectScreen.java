@@ -3,16 +3,14 @@ package com.waskronos.Tetris.ui;
 import com.waskronos.Tetris.app.TetrisApp;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
+import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 public class ModeSelectScreen extends BorderPane {
-    // This screen lets the player pick a mode
-    // This keeps controls visible for clarity
+    // Mode selection with One Player and Two Player configs per milestone.
 
     private final TetrisApp app;
 
@@ -25,13 +23,47 @@ public class ModeSelectScreen extends BorderPane {
         BorderPane.setAlignment(title, Pos.CENTER);
         BorderPane.setMargin(title, new Insets(16, 16, 8, 16));
 
-        Button singleBtn = makeBtn("Single Player", () -> app.showGameScreen());
-        Button twoBtn    = makeBtn("Two Player",    () -> app.showTwoPlayerScreen());
-        Button aiBtn     = makeBtn("Single (Assisted)", () -> app.showGameScreenAssisted());
+        // One Player config: AI Assist toggle.
+        Label oneHeader = new Label("One Player");
+        oneHeader.getStyleClass().add("subtitle");
+        CheckBox aiAssist = new CheckBox("AI Assist");
+        Button startOne = new Button("Start");
+        startOne.getStyleClass().add("big");
+        startOne.setOnAction(e -> {
+            if (aiAssist.isSelected()) app.showGameScreenAssisted();
+            else app.showGameScreen();
+        });
+        VBox oneBox = new VBox(8, oneHeader, aiAssist, startOne);
+        stylePanel(oneBox);
 
-        VBox buttons = new VBox(14, singleBtn, twoBtn, aiBtn);
-        buttons.setAlignment(Pos.CENTER);
-        setCenter(buttons);
+        // Two Player config: choose each player mode.
+        Label twoHeader = new Label("Two Player");
+        twoHeader.getStyleClass().add("subtitle");
+
+        ComboBox<String> p1Mode = new ComboBox<>();
+        p1Mode.getItems().addAll("Human", "AI", "External");
+        p1Mode.getSelectionModel().select("Human");
+
+        ComboBox<String> p2Mode = new ComboBox<>();
+        p2Mode.getItems().addAll("Human", "AI", "External");
+        p2Mode.getSelectionModel().select("Human");
+
+        HBox rows = new HBox(10,
+                new Label("P1:"), p1Mode,
+                new Label("P2:"), p2Mode
+        );
+        Button startTwo = new Button("Start");
+        startTwo.getStyleClass().add("big");
+        startTwo.setOnAction(e -> app.showTwoPlayerConfigured(
+                toMode(p1Mode.getValue()),
+                toMode(p2Mode.getValue())
+        ));
+        VBox twoBox = new VBox(8, twoHeader, rows, startTwo);
+        stylePanel(twoBox);
+
+        HBox center = new HBox(16, oneBox, twoBox);
+        center.setAlignment(Pos.CENTER);
+        setCenter(center);
 
         Button back = new Button("Back");
         back.setOnAction(e -> app.showMainScreen());
@@ -39,25 +71,27 @@ public class ModeSelectScreen extends BorderPane {
         backRow.setAlignment(Pos.CENTER);
         backRow.setPadding(new Insets(10, 0, 6, 0));
 
-        VBox singleBox = buildSingleControlsBox();
-        VBox twoBox    = buildTwoControlsBox();
+        // Controls help panels.
+        VBox singleHelp = buildSingleControlsBox();
+        VBox twoHelp    = buildTwoControlsBox();
 
-        HBox bottomBoxes = new HBox(16, singleBox, twoBox);
+        HBox bottomBoxes = new HBox(16, singleHelp, twoHelp);
         bottomBoxes.setAlignment(Pos.CENTER);
         bottomBoxes.setPadding(new Insets(6, 12, 12, 12));
-        HBox.setHgrow(singleBox, Priority.ALWAYS);
-        HBox.setHgrow(twoBox, Priority.ALWAYS);
+        HBox.setHgrow(singleHelp, Priority.ALWAYS);
+        HBox.setHgrow(twoHelp, Priority.ALWAYS);
 
         VBox bottom = new VBox(backRow, bottomBoxes);
         bottom.setAlignment(Pos.CENTER);
         setBottom(bottom);
     }
 
-    private Button makeBtn(String text, Runnable action) {
-        Button b = new Button(text);
-        b.getStyleClass().add("big");
-        b.setOnAction(e -> action.run());
-        return b;
+    private TwoPlayerScreen.PlayerMode toMode(String v) {
+        return switch (v) {
+            case "AI" -> TwoPlayerScreen.PlayerMode.AI;
+            case "External" -> TwoPlayerScreen.PlayerMode.EXTERNAL;
+            default -> TwoPlayerScreen.PlayerMode.HUMAN;
+        };
     }
 
     private VBox buildSingleControlsBox() {

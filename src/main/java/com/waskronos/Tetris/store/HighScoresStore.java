@@ -2,7 +2,6 @@ package com.waskronos.Tetris.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.waskronos.Tetris.events.GameEvents;
 import javafx.application.Platform;
 
 import java.io.File;
@@ -11,8 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class HighScoresStore {
-    // This class persists high scores as JSON.
-    // This follows single responsibility.
+    // Persists high scores as JSON.
 
     private static final HighScoresStore INSTANCE = new HighScoresStore();
     public static HighScoresStore getInstance() { return INSTANCE; }
@@ -21,15 +19,13 @@ public class HighScoresStore {
     private final Path filePath = Path.of(System.getProperty("user.home"), ".tetrix", "highscores.json");
 
     private HighScoresStore() {
-        GameEvents.getInstance().addGameOverListener(evt ->
-                addScoreAsync(evt.getName(), evt.getScore(), evt.getLevel())
-        );
+        // No global auto-save here to avoid duplicates; saving is triggered by UI prompts.
     }
 
     public void addScoreAsync(String name, int score, int level) {
         new Thread(() -> {
             HighScores all = load();
-            all.addAndTrim(new HighScore(name == null ? "PLAYER" : name, score, System.currentTimeMillis()));
+            all.addAndTrim(new HighScore(name == null || name.isBlank() ? "PLAYER" : name.trim(), score, System.currentTimeMillis()));
             save(all);
         }, "hiscore-save").start();
     }

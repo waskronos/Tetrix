@@ -9,6 +9,7 @@ import com.waskronos.Tetris.core.TetrominoType;
 import com.waskronos.Tetris.random.BagRandomizer;
 import com.waskronos.Tetris.random.PieceRandomizer;
 import com.waskronos.Tetris.settings.SettingsManager;
+import com.waskronos.Tetris.store.HighScoresStore;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -16,6 +17,7 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -26,9 +28,10 @@ import javafx.scene.text.Font;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Optional;
 
 public class GameScreen extends BorderPane {
-    // This view renders a game board and handles input.
+    // Renders a board and handles input.
 
     private final TetrisApp app;
     private final SettingsManager settings = SettingsManager.getInstance();
@@ -92,6 +95,9 @@ public class GameScreen extends BorderPane {
     private final Deque<Runnable> aiPlan = new ArrayDeque<>();
     private long nextAiActionAtNs = 0;
     private static final long AI_STEP_INTERVAL_NS = 80_000_000L;
+
+    // High score prompt control for embedded two-player boards.
+    private boolean highScorePromptEnabled = true;
 
     public GameScreen(TetrisApp app) {
         this(app, new BagRandomizer(), true);
@@ -159,6 +165,10 @@ public class GameScreen extends BorderPane {
         gameCanvas.requestFocus();
     }
 
+    public void setHighScorePromptEnabled(boolean enabled) {
+        this.highScorePromptEnabled = enabled; // controls single-player vs embedded prompt
+    }
+
     public void setAiActive(boolean active) {
         this.aiActive = active;
         if (aiBadge != null) {
@@ -173,6 +183,11 @@ public class GameScreen extends BorderPane {
             this.playerName = name;
         }
     }
+
+    // Expose for two-player winner prompt.
+    public int getScore() { return score; }
+    public int getLevel() { return level; }
+    public String getPlayerName() { return playerName; }
 
     private VBox createStatsPanel() {
         VBox statsPanel = new VBox(16);
@@ -428,6 +443,10 @@ public class GameScreen extends BorderPane {
                     ));
 
             if (pauseButton != null) pauseButton.setText("Restart");
+
+            if (highScorePromptEnabled) {
+                promptHighScore(); // single player prompt
+            }
         } else if (aiActive) {
             planAiForCurrentPiece();
         }
@@ -722,7 +741,7 @@ public class GameScreen extends BorderPane {
         gc.strokeLine(px + 1, py + cellSize - 1, px + cellSize - 1, py + cellSize - 1);
     }
 
-    private Color getColor(int code) {
+    private javafx.scene.paint.Color getColor(int code) {
         return switch (code) {
             case 1 -> Color.CYAN;
             case 2 -> Color.YELLOW;
@@ -944,5 +963,14 @@ public class GameScreen extends BorderPane {
         gc.setStroke(stroke);
         gc.setLineWidth(1.5);
         gc.strokeRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+    }
+
+    private void promptHighScore() {
+        TextInputDialog dlg = new TextInputDialog(playerName);
+        dlg.setTitle("Save High Score");
+        dlg.setHeaderText("Score: " + score + "   Level: " + level);
+        dlg.setContentText("Name:");
+        Optional<String> res = dlg.showAndWait();
+        res.ifPresent(n -> HighScoresStore.getInstance().addScoreAsync(n, score, level));
     }
 }

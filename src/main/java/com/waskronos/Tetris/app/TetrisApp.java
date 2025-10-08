@@ -27,14 +27,17 @@ public class TetrisApp extends Application {
 
         var bgmUrl = getClass().getResource("/sounds/bgm.mp3");
         if (bgmUrl != null) {
-            bgmPlayer = new MediaPlayer(new Media(bgmUrl.toExternalForm()));
-            bgmPlayer.setCycleCount(MediaPlayer.INDEFINITE);
-            bgmPlayer.setVolume(0.6);
-            if (musicEnabled) {
-                bgmPlayer.play();
+            try {
+                var media = new Media(bgmUrl.toExternalForm());
+                media.setOnError(() -> System.out.println("[BGM] Media error: " + media.getError()));
+                bgmPlayer = new MediaPlayer(media);
+                bgmPlayer.setOnError(() -> System.out.println("[BGM] Player error: " + bgmPlayer.getError()));
+                bgmPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                bgmPlayer.setVolume(0.6);
+                if (musicEnabled) bgmPlayer.play();
+            } catch (Exception ex) {
+                System.out.println("[BGM] Failed to init: " + ex.getMessage());
             }
-        } else {
-            System.out.println("[BGM] Missing: /sounds/bgm.mp3");
         }
 
         showSplashScreen();
@@ -121,6 +124,17 @@ public class TetrisApp extends Application {
         inGame = true;
         if (bgmPlayer != null) bgmPlayer.setMute(true);
         TwoPlayerScreen screen = new TwoPlayerScreen(this);
+        Scene scene = new Scene(screen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
+    // Two-player configured start; supports Human/AI/External per player.
+    public void showTwoPlayerConfigured(TwoPlayerScreen.PlayerMode p1Mode, TwoPlayerScreen.PlayerMode p2Mode) {
+        inGame = true;
+        if (bgmPlayer != null) bgmPlayer.setMute(true);
+        TwoPlayerScreen screen = new TwoPlayerScreen(this, p1Mode, p2Mode);
         Scene scene = new Scene(screen);
         applyStyles(scene);
         primaryStage.setScene(scene);
