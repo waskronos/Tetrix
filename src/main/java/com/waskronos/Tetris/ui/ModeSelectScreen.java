@@ -10,7 +10,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 public class ModeSelectScreen extends BorderPane {
-    // Mode selection with One Player and Two Player configs per milestone.
+    // Mode selection with One Player and Two Player configs.
 
     private final TetrisApp app;
 
@@ -23,20 +23,24 @@ public class ModeSelectScreen extends BorderPane {
         BorderPane.setAlignment(title, Pos.CENTER);
         BorderPane.setMargin(title, new Insets(16, 16, 8, 16));
 
-        // One Player config: AI Assist toggle.
         Label oneHeader = new Label("One Player");
         oneHeader.getStyleClass().add("subtitle");
-        CheckBox aiAssist = new CheckBox("AI Assist");
+
+        ComboBox<String> oneMode = new ComboBox<>();
+        oneMode.getItems().addAll("Human", "AI Assist", "External");
+        oneMode.getSelectionModel().select("Human");
+
         Button startOne = new Button("Start");
         startOne.getStyleClass().add("big");
         startOne.setOnAction(e -> {
-            if (aiAssist.isSelected()) app.showGameScreenAssisted();
+            String v = oneMode.getValue();
+            if ("AI Assist".equals(v)) app.showGameScreenAssisted();
+            else if ("External".equals(v)) app.showGameScreenExternal();
             else app.showGameScreen();
         });
-        VBox oneBox = new VBox(8, oneHeader, aiAssist, startOne);
+        VBox oneBox = new VBox(8, oneHeader, oneMode, startOne);
         stylePanel(oneBox);
 
-        // Two Player config: choose each player mode.
         Label twoHeader = new Label("Two Player");
         twoHeader.getStyleClass().add("subtitle");
 
@@ -48,10 +52,7 @@ public class ModeSelectScreen extends BorderPane {
         p2Mode.getItems().addAll("Human", "AI", "External");
         p2Mode.getSelectionModel().select("Human");
 
-        HBox rows = new HBox(10,
-                new Label("P1:"), p1Mode,
-                new Label("P2:"), p2Mode
-        );
+        HBox rows = new HBox(10, new Label("P1:"), p1Mode, new Label("P2:"), p2Mode);
         Button startTwo = new Button("Start");
         startTwo.getStyleClass().add("big");
         startTwo.setOnAction(e -> app.showTwoPlayerConfigured(
@@ -71,7 +72,6 @@ public class ModeSelectScreen extends BorderPane {
         backRow.setAlignment(Pos.CENTER);
         backRow.setPadding(new Insets(10, 0, 6, 0));
 
-        // Controls help panels.
         VBox singleHelp = buildSingleControlsBox();
         VBox twoHelp    = buildTwoControlsBox();
 

@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class HighScoresStore {
-    // Persists high scores as JSON.
 
     private static final HighScoresStore INSTANCE = new HighScoresStore();
     public static HighScoresStore getInstance() { return INSTANCE; }
@@ -19,7 +18,6 @@ public class HighScoresStore {
     private final Path filePath = Path.of(System.getProperty("user.home"), ".tetrix", "highscores.json");
 
     private HighScoresStore() {
-        // No global auto-save here to avoid duplicates; saving is triggered by UI prompts.
     }
 
     public void addScoreAsync(String name, int score, int level) {
@@ -53,5 +51,9 @@ public class HighScoresStore {
             HighScores hs = load();
             Platform.runLater(() -> callback.accept(hs));
         }, "hiscore-load").start();
+    }
+
+    public void resetAll() {
+        save(new HighScores());
     }
 }

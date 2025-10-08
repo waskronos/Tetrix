@@ -5,6 +5,9 @@ import com.waskronos.Tetris.events.GameEvents;
 import com.waskronos.Tetris.random.BagRandomizer;
 import com.waskronos.Tetris.random.PieceRandomizer;
 import com.waskronos.Tetris.store.HighScoresStore;
+import com.waskronos.Tetris.net.ServerConnection;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -16,11 +19,11 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.util.Duration;
 
 import java.util.Optional;
 
 public class TwoPlayerScreen extends BorderPane {
-    // Two fields share the same piece sequence seed; match ends when the winner finishes.
 
     public enum PlayerMode { HUMAN, AI, EXTERNAL }
 
@@ -39,14 +42,17 @@ public class TwoPlayerScreen extends BorderPane {
     private final PlayerMode p1Mode;
     private final PlayerMode p2Mode;
 
-    // Tracks the inferred winner after the first game over.
-    private String winnerCandidate = null; // "P1" or "P2"
+    private String winnerCandidate = null;
 
     private final GameEvents.GameOverListener gameOverListener = evt -> {
         String who = evt.getName();
         if (!"P1".equalsIgnoreCase(who) && !"P2".equalsIgnoreCase(who)) return;
         Platform.runLater(() -> onBoardGameOver(who));
     };
+
+    private boolean serverConnected = false;
+    private Label serverLabel;
+    private Timeline serverPoll;
 
     public TwoPlayerScreen(TetrisApp app) {
         this(app, PlayerMode.HUMAN, PlayerMode.HUMAN);
@@ -70,12 +76,17 @@ public class TwoPlayerScreen extends BorderPane {
         p1.setAiActive(p1Mode == PlayerMode.AI);
         p2.setAiActive(p2Mode == PlayerMode.AI);
 
-        // High score prompting is handled at match-end here.
         p1.setHighScorePromptEnabled(false);
         p2.setHighScorePromptEnabled(false);
 
+        p1.setExternalControlled(p1Mode == PlayerMode.EXTERNAL);
+        p2.setExternalControlled(p2Mode == PlayerMode.EXTERNAL);
+
         try { p1.setControlsVisible(false); } catch (Throwable ignored) {}
         try { p2.setControlsVisible(false); } catch (Throwable ignored) {}
+
+        serverLabel = new Label("SERVER: OFFLINE");
+        serverLabel.setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
 
         HBox boards = new HBox(20, p1, p2);
         boards.setAlignment(Pos.CENTER);
@@ -89,6 +100,9 @@ public class TwoPlayerScreen extends BorderPane {
         StackPane center = new StackPane(boards, resultBanner);
         StackPane.setAlignment(resultBanner, Pos.TOP_CENTER);
         StackPane.setMargin(resultBanner, new Insets(16, 0, 0, 0));
+        setTop(serverLabel);
+        BorderPane.setAlignment(serverLabel, Pos.CENTER);
+        BorderPane.setMargin(serverLabel, new Insets(8, 0, 0, 0));
         setCenter(center);
 
         backBtn = new Button("Back to Mode Select");
@@ -125,7 +139,7 @@ public class TwoPlayerScreen extends BorderPane {
                     return;
                 }
 
-                if (p1Mode == PlayerMode.HUMAN) {
+                if (p1Mode == PlayerMode.HUMAN || (p1Mode == PlayerMode.EXTERNAL && serverConnected)) {
                     switch (k) {
                         case A -> { p1.moveLeft(); e.consume(); return; }
                         case D -> { p1.moveRight(); e.consume(); return; }
@@ -136,7 +150,7 @@ public class TwoPlayerScreen extends BorderPane {
                     }
                 }
 
-                if (p2Mode == PlayerMode.HUMAN) {
+                if (p2Mode == PlayerMode.HUMAN || (p2Mode == PlayerMode.EXTERNAL && serverConnected)) {
                     switch (k) {
                         case LEFT  -> { p2.moveLeft(); e.consume(); return; }
                         case RIGHT -> { p2.moveRight(); e.consume(); return; }
@@ -153,10 +167,25 @@ public class TwoPlayerScreen extends BorderPane {
         });
 
         GameEvents.getInstance().addGameOverListener(gameOverListener);
+
+        serverPoll = new Timeline(new KeyFrame(Duration.seconds(1), ev -> {
+            new Thread(() -> {
+                boolean up = ServerConnection.ping();
+                Platform.runLater(() -> {
+                    serverConnected = up;
+                    serverLabel.setText(up ? "SERVER: CONNECTED" : "SERVER: OFFLINE");
+                    serverLabel.setStyle(up ? "-fx-text-fill: #39d353; -fx-font-weight: bold;"
+                            : "-fx-text-fill: orange; -fx-font-weight: bold;");
+                });
+            }, "server-ping-2p").start();
+        }));
+        serverPoll.setCycleCount(Timeline.INDEFINITE);
+        serverPoll.play();
     }
 
     private void cleanup() {
         GameEvents.getInstance().removeGameOverListener(gameOverListener);
+        if (serverPoll != null) serverPoll.stop();
     }
 
     private void onBoardGameOver(String who) {
@@ -164,13 +193,12 @@ public class TwoPlayerScreen extends BorderPane {
 
         if ("P1".equalsIgnoreCase(who)) {
             p1Ended = true;
-            if (winnerCandidate == null) winnerCandidate = "P2"; // P1 lost first, P2 is winner-in-progress
+            if (winnerCandidate == null) winnerCandidate = "P2";
         } else if ("P2".equalsIgnoreCase(who)) {
             p2Ended = true;
-            if (winnerCandidate == null) winnerCandidate = "P1"; // P2 lost first, P1 is winner-in-progress
+            if (winnerCandidate == null) winnerCandidate = "P1";
         }
 
-        // Only end the match when both boards have ended; then finalize winner and save score.
         if (p1Ended && p2Ended) {
             if (winnerCandidate == null) {
                 endMatchWithMessage("TIE");

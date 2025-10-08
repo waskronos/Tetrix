@@ -6,7 +6,9 @@ import com.waskronos.Tetris.store.HighScores;
 import com.waskronos.Tetris.store.HighScoresStore;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -15,9 +17,9 @@ import javafx.scene.layout.VBox;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 public class HighScoresScreen extends BorderPane {
-    // This screen shows the top scores.
 
     private final TetrisApp app;
     private final VBox listBox = new VBox(6);
@@ -35,10 +37,20 @@ public class HighScoresScreen extends BorderPane {
         Button refresh = new Button("Refresh");
         refresh.setOnAction(e -> refreshScores());
 
+        Button reset = new Button("Reset All");
+        reset.setOnAction(e -> {
+            Alert a = new Alert(Alert.AlertType.CONFIRMATION, "Clear all high scores?", ButtonType.OK, ButtonType.CANCEL);
+            Optional<ButtonType> res = a.showAndWait();
+            if (res.isPresent() && res.get() == ButtonType.OK) {
+                HighScoresStore.getInstance().resetAll();
+                refreshScores();
+            }
+        });
+
         Button back = new Button("Back");
         back.setOnAction(e -> app.showMainScreen());
 
-        HBox actions = new HBox(12, refresh, back);
+        HBox actions = new HBox(12, refresh, reset, back);
         actions.setAlignment(Pos.CENTER);
 
         VBox content = new VBox(16, title, listBox, actions);

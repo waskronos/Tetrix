@@ -120,6 +120,17 @@ public class TetrisApp extends Application {
         enforceMaximized();
     }
 
+    public void showGameScreenExternal(){
+        inGame = true;
+        if (bgmPlayer != null) bgmPlayer.setMute(true);
+        GameScreen gameScreen = new GameScreen(this);
+        gameScreen.setExternalControlled(true);
+        Scene scene = new Scene(gameScreen);
+        applyStyles(scene);
+        primaryStage.setScene(scene);
+        enforceMaximized();
+    }
+
     public void showTwoPlayerScreen() {
         inGame = true;
         if (bgmPlayer != null) bgmPlayer.setMute(true);
@@ -130,7 +141,6 @@ public class TetrisApp extends Application {
         enforceMaximized();
     }
 
-    // Two-player configured start; supports Human/AI/External per player.
     public void showTwoPlayerConfigured(TwoPlayerScreen.PlayerMode p1Mode, TwoPlayerScreen.PlayerMode p2Mode) {
         inGame = true;
         if (bgmPlayer != null) bgmPlayer.setMute(true);

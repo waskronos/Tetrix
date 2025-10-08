@@ -10,7 +10,10 @@ import com.waskronos.Tetris.random.BagRandomizer;
 import com.waskronos.Tetris.random.PieceRandomizer;
 import com.waskronos.Tetris.settings.SettingsManager;
 import com.waskronos.Tetris.store.HighScoresStore;
+import com.waskronos.Tetris.net.ServerConnection;
 import javafx.animation.AnimationTimer;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.canvas.Canvas;
@@ -25,13 +28,13 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.util.Duration;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Optional;
 
 public class GameScreen extends BorderPane {
-    // Renders a board and handles input.
 
     private final TetrisApp app;
     private final SettingsManager settings = SettingsManager.getInstance();
@@ -96,8 +99,12 @@ public class GameScreen extends BorderPane {
     private long nextAiActionAtNs = 0;
     private static final long AI_STEP_INTERVAL_NS = 80_000_000L;
 
-    // High score prompt control for embedded two-player boards.
     private boolean highScorePromptEnabled = true;
+
+    private boolean externalControlled = false;
+    private boolean serverConnected = false;
+    private Label serverLabel;
+    private Timeline serverPoll;
 
     public GameScreen(TetrisApp app) {
         this(app, new BagRandomizer(), true);
@@ -166,7 +173,7 @@ public class GameScreen extends BorderPane {
     }
 
     public void setHighScorePromptEnabled(boolean enabled) {
-        this.highScorePromptEnabled = enabled; // controls single-player vs embedded prompt
+        this.highScorePromptEnabled = enabled;
     }
 
     public void setAiActive(boolean active) {
@@ -178,13 +185,21 @@ public class GameScreen extends BorderPane {
         aiPlan.clear();
     }
 
+    public void setExternalControlled(boolean external) {
+        this.externalControlled = external;
+        ensureServerPoll();
+        if (serverLabel != null) {
+            serverLabel.setVisible(external);
+            serverLabel.setManaged(external);
+        }
+    }
+
     public void setPlayerName(String name) {
         if (name != null && !name.isBlank()) {
             this.playerName = name;
         }
     }
 
-    // Expose for two-player winner prompt.
     public int getScore() { return score; }
     public int getLevel() { return level; }
     public String getPlayerName() { return playerName; }
@@ -227,6 +242,11 @@ public class GameScreen extends BorderPane {
         aiBadge.setVisible(false);
         aiBadge.setManaged(false);
 
+        serverLabel = new Label("SERVER: OFFLINE");
+        serverLabel.setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
+        serverLabel.setVisible(false);
+        serverLabel.setManaged(false);
+
         statsPanel.getChildren().addAll(
                 nextLabel, nextPieceCanvas,
                 scoreLabel, scoreValue,
@@ -234,7 +254,8 @@ public class GameScreen extends BorderPane {
                 diffiLabel, diffiValue,
                 musicLabel, musicValue,
                 sfxLabel, sfxValue,
-                aiBadge
+                aiBadge,
+                serverLabel
         );
         return statsPanel;
     }
@@ -253,6 +274,7 @@ public class GameScreen extends BorderPane {
     }
 
     private void handleKeyPressed(KeyCode code) {
+        if (externalControlled && !serverConnected) return;
         if (currentTetramino == null) return;
         if (isPaused && code != KeyCode.ESCAPE) return;
 
@@ -319,6 +341,7 @@ public class GameScreen extends BorderPane {
 
     private void stopGame() {
         if (loop != null) loop.stop();
+        if (serverPoll != null) serverPoll.stop();
     }
 
     private void createPauseOverlay() {
@@ -445,7 +468,7 @@ public class GameScreen extends BorderPane {
             if (pauseButton != null) pauseButton.setText("Restart");
 
             if (highScorePromptEnabled) {
-                promptHighScore(); // single player prompt
+                promptHighScore();
             }
         } else if (aiActive) {
             planAiForCurrentPiece();
@@ -963,6 +986,28 @@ public class GameScreen extends BorderPane {
         gc.setStroke(stroke);
         gc.setLineWidth(1.5);
         gc.strokeRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+    }
+
+    private void ensureServerPoll() {
+        if (!externalControlled) return;
+        if (serverPoll != null) return;
+        serverLabel.setVisible(true);
+        serverLabel.setManaged(true);
+        serverPoll = new Timeline(new KeyFrame(Duration.seconds(1), ev -> {
+            new Thread(() -> {
+                boolean up = ServerConnection.ping();
+                javafx.application.Platform.runLater(() -> {
+                    serverConnected = up;
+                    if (serverLabel != null) {
+                        serverLabel.setText(up ? "SERVER: CONNECTED" : "SERVER: OFFLINE");
+                        serverLabel.setStyle(up ? "-fx-text-fill: #39d353; -fx-font-weight: bold;"
+                                : "-fx-text-fill: orange; -fx-font-weight: bold;");
+                    }
+                });
+            }, "server-ping").start();
+        }));
+        serverPoll.setCycleCount(Timeline.INDEFINITE);
+        serverPoll.play();
     }
 
     private void promptHighScore() {
